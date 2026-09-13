@@ -43,7 +43,7 @@ const paymentTransactionSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["pending", "processing", "success", "failed"],
+      enum: ["pending", "processing", "success", "failed", "cancelled"],
       default: "pending",
       index: true,
     },
@@ -110,11 +110,24 @@ const paymentTransactionSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 // Compound index for tracking page queries
-paymentTransactionSchema.index({ company: 1, status: 1, createdAt: -1 });
-paymentTransactionSchema.index({ payroll: 1, employee: 1 });
+paymentTransactionSchema.index({
+  company: 1,
+  status: 1,
+  createdAt: -1,
+});
+
+paymentTransactionSchema.index(
+  { payroll: 1, employee: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      status: { $in: ["pending", "processing", "success"] },
+    },
+  },
+);
 
 export default mongoose.model("PaymentTransaction", paymentTransactionSchema);

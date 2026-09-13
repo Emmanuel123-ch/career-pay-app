@@ -15,7 +15,7 @@ async function getAccessToken() {
   }
 
   const credentials = Buffer.from(
-    `${process.env.MONNIFY_API_KEY}:${process.env.MONNIFY_SECRET_KEY}`
+    `${process.env.MONNIFY_API_KEY}:${process.env.MONNIFY_SECRET_KEY}`,
   ).toString("base64");
 
   const response = await axios.post(
@@ -26,7 +26,7 @@ async function getAccessToken() {
         Authorization: `Basic ${credentials}`,
         "Content-Type": "application/json",
       },
-    }
+    },
   );
 
   if (!response.data?.requestSuccessful) {
@@ -46,11 +46,12 @@ async function getAccessToken() {
  * Returns { transferId, reference }
  */
 export async function initiateTransfer(transaction) {
-  const { amount, currency, bankDetails, paymentReference, attemptCount } = transaction;
+  const { amount, currency, bankDetails, paymentReference, attemptCount } =
+    transaction;
 
   if (!bankDetails.bankCode) {
     throw new Error(
-      `Bank code missing for account ${bankDetails.accountNumber}. Update employee bank details.`
+      `Bank code missing for account ${bankDetails.accountNumber}. Update employee bank details.`,
     );
   }
 
@@ -68,7 +69,7 @@ export async function initiateTransfer(transaction) {
         narration: "Salary payment - CareerPay",
         destinationBankCode: bankDetails.bankCode,
         destinationAccountNumber: bankDetails.accountNumber,
-        destinationAccountName: bankDetails.accountName, 
+        destinationAccountName: bankDetails.accountName,
         currency,
         sourceAccountNumber: process.env.MONNIFY_WALLET_ACCOUNT,
       },
@@ -77,12 +78,12 @@ export async function initiateTransfer(transaction) {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-      }
+      },
     );
 
     if (!response.data?.requestSuccessful) {
       throw new Error(
-        response.data?.responseMessage || "Monnify transfer initiation failed"
+        response.data?.responseMessage || "Monnify transfer initiation failed",
       );
     }
 
@@ -94,11 +95,11 @@ export async function initiateTransfer(transaction) {
     if (error.response) {
       console.error(
         "Monnify error response:",
-        JSON.stringify(error.response.data, null, 2)
+        JSON.stringify(error.response.data, null, 2),
       );
       console.error(
         "Monnify request payload:",
-        JSON.stringify(error.config?.data, null, 2)
+        JSON.stringify(error.config?.data, null, 2),
       );
     }
     throw error;
@@ -120,7 +121,7 @@ export async function verifyTransfer(gatewayTransferId) {
       headers: {
         Authorization: `Bearer ${token}`,
       },
-    }
+    },
   );
 
   // Normalize Monnify status to match Flutterwave format

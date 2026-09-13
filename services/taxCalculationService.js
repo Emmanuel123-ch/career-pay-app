@@ -80,13 +80,13 @@ class TaxCalculationService {
 
     return {
       employeeContribution: Math.round(
-        pensionBase * this.PENSION_EMPLOYEE_RATE
+        pensionBase * this.PENSION_EMPLOYEE_RATE,
       ),
       employerContribution: Math.round(
-        pensionBase * this.PENSION_EMPLOYER_RATE
+        pensionBase * this.PENSION_EMPLOYER_RATE,
       ),
       totalContribution: Math.round(
-        pensionBase * (this.PENSION_EMPLOYEE_RATE + this.PENSION_EMPLOYER_RATE)
+        pensionBase * (this.PENSION_EMPLOYEE_RATE + this.PENSION_EMPLOYER_RATE),
       ),
     };
   }
@@ -197,7 +197,7 @@ class TaxCalculationService {
     // Inclusive day count — minimum 1 day
     const daysWorked = Math.max(
       1,
-      Math.floor((workEnd - workStart) / (1000 * 60 * 60 * 24)) + 1
+      Math.floor((workEnd - workStart) / (1000 * 60 * 60 * 24)) + 1,
     );
 
     // Build payslip note
@@ -214,7 +214,6 @@ class TaxCalculationService {
 
     return { isProrated, daysWorked, daysInMonth, prorationNote };
   }
-
 
   /**
    * Complete payroll calculation for a single employee
@@ -241,7 +240,7 @@ class TaxCalculationService {
           otherDeductions,
           totalDeductions: otherDeductions.reduce(
             (sum, d) => sum + d.amount,
-            0
+            0,
           ),
         },
         additions: {
@@ -264,12 +263,12 @@ class TaxCalculationService {
     const pension = this.calculatePension(adjustedGross, basicSalary);
     const tax = this.calculateMonthlyPAYE(
       adjustedGross - pension.employeeContribution,
-      taxRelief
+      taxRelief,
     );
     const nhf = this.calculateNHF(adjustedGross, basicSalary);
     const otherDeductionsTotal = otherDeductions.reduce(
       (sum, d) => sum + d.amount,
-      0
+      0,
     );
 
     const totalDeductions =
@@ -332,12 +331,12 @@ class TaxCalculationService {
       totalGross: results.reduce((sum, r) => sum + r.grossSalary, 0),
       totalDeductions: results.reduce(
         (sum, r) => sum + r.deductions.totalDeductions,
-        0
+        0,
       ),
       totalNet: results.reduce((sum, r) => sum + r.netSalary, 0),
       totalEmployerContributions: results.reduce(
         (sum, r) => sum + r.employerContributions.totalEmployerCost,
-        0
+        0,
       ),
       totalCompanyCost: 0,
     };
@@ -411,7 +410,6 @@ class TaxCalculationService {
       breakdown,
     };
   }
-
 }
 
 export default new TaxCalculationService();

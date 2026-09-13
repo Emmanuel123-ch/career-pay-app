@@ -37,7 +37,7 @@ router.post("/login", authController.login);
  * @desc    Logout user
  * @access  Private
  */
-router.post("/logout", protect, authController.logout);
+router.post("/logout", authController.logout);
 
 /**
  * @route   POST /api/auth/refresh-token

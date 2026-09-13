@@ -1,6 +1,11 @@
 import express from "express";
 import payrollController from "../controllers/payrollController.js";
-import { protect, isHROrAbove, isFounderOrAdmin, requireVerified } from "../middlewares/authMiddleware.js";
+import {
+  protect,
+  isHROrAbove,
+  isFounderOrAdmin,
+  requireVerified,
+} from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
 
@@ -53,13 +58,6 @@ router.post("/", isHROrAbove, payrollController.createPayroll);
 router.get("/", isHROrAbove, payrollController.getAllPayrolls);
 
 /**
- * @route   GET /api/payroll/:id
- * @desc    Get payroll by ID
- * @access  Private (HR+)
- */
-router.get("/:id", isHROrAbove, payrollController.getPayrollById);
-
-/**
  * @route   POST /api/payroll/:id/calculate
  * @desc    Calculate payroll for all employees
  * @access  Private (HR+)
@@ -71,7 +69,11 @@ router.post("/:id/calculate", isHROrAbove, payrollController.calculatePayroll);
  * @desc    Add bonus, overtime, allowances before calculation (optional step)
  * @access  Private (HR+)
  */
-router.patch("/:id/compensation", isHROrAbove, payrollController.addPayrollCompensation);
+router.patch(
+  "/:id/compensation",
+  isHROrAbove,
+  payrollController.addPayrollCompensation,
+);
 
 /**
  * @route   POST /api/payroll/:id/approve
@@ -106,7 +108,11 @@ router.get("/:id/payslip/:employeeId", payrollController.getPayslip);
  * @desc    Correct a specific employee's payroll item (draft/calculated only)
  * @access  Private (HR+)
  */
-router.patch("/:id/items/:employeeId", isHROrAbove, payrollController.correctPayrollItem);
+router.patch(
+  "/:id/items/:employeeId",
+  isHROrAbove,
+  payrollController.correctPayrollItem,
+);
 
 /**
  * @route   GET /api/payroll/transactions
@@ -116,17 +122,47 @@ router.patch("/:id/items/:employeeId", isHROrAbove, payrollController.correctPay
 router.get("/transactions", isHROrAbove, payrollController.getAllTransactions);
 
 /**
+
+ * @route   GET /api/payroll/:id
+
+ * @desc    Get payroll by ID
+
+ * @access  Private (HR+)
+
+ */
+
+router.get("/:id", isHROrAbove, payrollController.getPayrollById);
+
+/**
  * @route   GET /api/payroll/:id/transactions
  * @desc    Get all payment transactions for a specific payroll
  * @access  Private (HR+)
  */
-router.get("/:id/transactions", isHROrAbove, payrollController.getPayrollTransactions);
+
+router.get(
+  "/:id/transactions",
+  isHROrAbove,
+  payrollController.getPayrollTransactions,
+);
 
 /**
  * @route   POST /api/payroll/:id/retry-failed
  * @desc    Retry failed payments for a partially completed or failed payroll
  * @access  Private (Founder/Admin only)
  */
-router.post("/:id/retry-failed", isFounderOrAdmin, payrollController.retryFailedPayments);
+router.post(
+  "/:id/retry-failed",
+  isFounderOrAdmin,
+  payrollController.retryFailedPayments,
+);
+
+router.post("/:id/reset", isFounderOrAdmin, payrollController.resetPayroll);
+
+/**
+ * @route   POST /api/payroll/:id/cancel
+ * @desc    Cancel pending payroll payment jobs
+ * @access  Private (Founder/Admin only)
+ */
+router.post("/:id/cancel", isFounderOrAdmin, payrollController.cancelPayroll);
 
 export default router;

@@ -1,15 +1,16 @@
 import axios from "axios";
+
 import Employee from "../models/employeeModel.js";
 import User from "../models/userModel.js";
 import Company from "../models/companyModel.js";
 import Audit from "../models/auditModel.js";
 import emailService from "../services/emailService.js";
 
-
 /**
- * Validates bank details against BRD rules and your custom validations.
+ * Validates bank details against BRD rules and custom validations.
+ *
  * Warnings (non-blocking):
- *   - Account name doesn't contain employee's first or last name
+ * - Account name doesn't contain employee's first or last name
  */
 function validateBankDetails(bankDetails, firstName, lastName) {
   const errors = [];
@@ -23,7 +24,7 @@ function validateBankDetails(bankDetails, firstName, lastName) {
       }
     }
 
-    // Bank code: must be exactly 3 digits — from Flutterwave bank list
+    // Bank code: must be exactly 3 digits
     if (bankDetails.bankCode) {
       if (!/^\d{3}$/.test(bankDetails.bankCode)) {
         errors.push("Bank code must be exactly 3 digits");
@@ -31,7 +32,6 @@ function validateBankDetails(bankDetails, firstName, lastName) {
     }
 
     // Account name: warn if neither first nor last name appears
-    // Simple check — account name may be in different order or abbreviated
     if (bankDetails.accountName && firstName && lastName) {
       const accountNameLower = bankDetails.accountName.toLowerCase();
       const firstNameLower = firstName.toLowerCase();
@@ -43,7 +43,7 @@ function validateBankDetails(bankDetails, firstName, lastName) {
 
       if (!nameMatch) {
         warnings.push(
-          `Account name "${bankDetails.accountName}" does not appear to match the employee's name (${firstName} ${lastName}). Please verify this is the correct account.`
+          `Account name "${bankDetails.accountName}" does not appear to match the employee's name (${firstName} ${lastName}). Please verify this is the correct account.`,
         );
       }
     }
@@ -54,10 +54,12 @@ function validateBankDetails(bankDetails, firstName, lastName) {
 
 /**
  * Validates Nigerian phone number format.
+ *
  * Must be +234XXXXXXXXXX — 13 characters total.
  */
 function validatePhoneFormat(phone) {
-  if (!phone) return true; // phone is optional at employee level
+  if (!phone) return true;
+
   return /^\+234\d{10}$/.test(phone);
 }
 
@@ -70,6 +72,7 @@ class EmployeeController {
     try {
       const companyId = req.user.company;
       const userId = req.user.id;
+
       const {
         email,
         firstName,
@@ -100,15 +103,16 @@ class EmployeeController {
         });
       }
 
-      // Validate phone format if provided 
+      // Validate phone format if provided
       if (phone && !validatePhoneFormat(phone)) {
         return res.status(400).json({
           success: false,
-          message: "Phone must be in +234XXXXXXXXXX format (e.g. +2348012345678)",
+          message:
+            "Phone must be in +234XXXXXXXXXX format (e.g. +2348012345678)",
         });
       }
 
-      // Start date cannot be in the future — BRD rule EMP-005
+      // Start date cannot be in the future
       if (new Date(startDate) > new Date()) {
         return res.status(400).json({
           success: false,
@@ -116,9 +120,11 @@ class EmployeeController {
         });
       }
 
-      // Salary currency must match company base currency — BRD rule EMP-007
+      // Salary currency must match company base currency
       if (salary?.currency) {
-        const company = await Company.findById(companyId).select("baseCurrency");
+        const company =
+          await Company.findById(companyId).select("baseCurrency");
+
         if (company && salary.currency !== company.baseCurrency) {
           return res.status(400).json({
             success: false,
@@ -127,8 +133,13 @@ class EmployeeController {
         }
       }
 
-      // Bank details validation (hard errors + warnings)
-      const bankValidation = validateBankDetails(bankDetails, firstName, lastName);
+      // Bank details validation
+      const bankValidation = validateBankDetails(
+        bankDetails,
+        firstName,
+        lastName,
+      );
+
       if (bankValidation.errors.length > 0) {
         return res.status(400).json({
           success: false,
@@ -139,6 +150,7 @@ class EmployeeController {
 
       // Check if user email already exists
       const existingUser = await User.findOne({ email });
+
       if (existingUser) {
         return res.status(400).json({
           success: false,
@@ -146,12 +158,13 @@ class EmployeeController {
         });
       }
 
+      // Generate temporary password
       const temporaryPassword = Math.random().toString(36).slice(-8) + "Aa1!";
 
       // Create user account for employee
       const user = await User.create({
         email,
-        password: temporaryPassword, 
+        password: temporaryPassword,
         firstName,
         lastName,
         phone,
@@ -196,27 +209,28 @@ class EmployeeController {
         severity: "medium",
       });
 
-      // Send welcome email with temporary password to new employee
+      // Send welcome email with temporary password
       try {
         await emailService.sendWelcomeEmail(
           {
             firstName: user.firstName,
             email: user.email,
           },
-          temporaryPassword // the plain text password before hashing
+          temporaryPassword,
         );
       } catch (emailError) {
-        // Don't block the response if email fails
+        // Don't block response if email fails
         console.error("Welcome email failed:", emailError.message);
       }
 
-      res.status(201).json({
+      return res.status(201).json({
         success: true,
         message: "Employee created successfully",
-        // include bank warnings in response if any
+
         ...(bankValidation.warnings.length > 0 && {
           warnings: bankValidation.warnings,
         }),
+
         data: {
           employee,
           user: {
@@ -229,7 +243,8 @@ class EmployeeController {
       });
     } catch (error) {
       console.error("Create employee error:", error);
-      res.status(400).json({
+
+      return res.status(400).json({
         success: false,
         message: error.message || "Failed to create employee",
       });
@@ -243,6 +258,7 @@ class EmployeeController {
   async getAllEmployees(req, res) {
     try {
       const companyId = req.user.company;
+
       const {
         page = 1,
         department,
@@ -253,43 +269,70 @@ class EmployeeController {
         sortOrder = "asc",
       } = req.query;
 
-      // enforce pagination limit max 100 — BRD rule FLT-009
+      // Maximum pagination limit is 100
       const limit = Math.min(parseInt(req.query.limit) || 20, 100);
-
       const skip = (parseInt(page) - 1) * limit;
 
-      // Build the initial match — only this company's employees
-      const matchStage = { company: companyId };
-      if (department) matchStage.department = department;
-      if (position) matchStage.position = { $regex: position, $options: "i" };
-      if (isActive !== undefined) matchStage.isActive = isActive === "true";
+      // Initial match — only this company's employees
+      const matchStage = {
+        company: companyId,
+      };
 
-      // Sort direction: 1 = ascending, -1 = descending
+      if (department) {
+        matchStage.department = department;
+      }
+
+      if (position) {
+        matchStage.position = {
+          $regex: position,
+          $options: "i",
+        };
+      }
+
+      if (isActive !== undefined) {
+        matchStage.isActive = isActive === "true";
+      }
+
+      // Sort direction
       const sortDirection = sortOrder === "desc" ? -1 : 1;
-      // Build the aggregation pipeline
-      // Think of each stage as one instruction MongoDB runs in order
+
+      /**
+       * Aggregation pipeline
+       */
       const pipeline = [
- 
-        // Stage 1: filter to only this company's employees
-        { $match: matchStage },
- 
-        // Stage 2: join the User document so we have firstName, lastName, email, phone
-        // This is the equivalent of .populate("user") but happens inside MongoDB
-        // "from" is the actual MongoDB collection name (lowercase + plural of model name)
+        // Stage 1: Filter to this company
+        {
+          $match: matchStage,
+        },
+
+        // Stage 2: Join User document
         {
           $lookup: {
             from: "users",
-            localField: "user",     // the field on Employee that holds the User ID
-            foreignField: "_id",    // the matching field on the User document
-            as: "user",             // store the result back into "user"
+            localField: "user",
+            foreignField: "_id",
+            as: "user",
+            pipeline: [
+              {
+                $project: {
+                  firstName: 1,
+                  lastName: 1,
+                  email: 1,
+                  phone: 1,
+                  role: 1,
+                  isActive: 1,
+                },
+              },
+            ],
           },
         },
- 
-        // Stage 3: $lookup returns an array — flatten it to a single object
-        // Because one employee only has one user, we just unwrap the array
-        { $unwind: "$user" },
- 
-        // Stage 4: join the manager document (same idea as joining user)
+
+        // Stage 3: Convert user array to object
+        {
+          $unwind: "$user",
+        },
+
+        // Stage 4: Join manager employee document
         {
           $lookup: {
             from: "employees",
@@ -298,53 +341,96 @@ class EmployeeController {
             as: "manager",
           },
         },
- 
-        // Stage 5: flatten manager array — use preserveNullAndEmptyArrays so
-        // employees without a manager don't get dropped from results
-        { $unwind: { path: "$manager", preserveNullAndEmptyArrays: true } },
- 
-        // Stage 6: apply search filter if provided — BRD 2.2
-        // $or means: match if ANY of these conditions are true
-        // $regex means: partial match (like .includes() in JavaScript)
+
+        // Stage 5: Keep employees without managers
+        {
+          $unwind: {
+            path: "$manager",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+
+        // Stage 6: Search filter
         ...(search
           ? [
               {
                 $match: {
                   $or: [
-                    { "user.firstName": { $regex: search, $options: "i" } },
-                    { "user.lastName":  { $regex: search, $options: "i" } },
-                    { "user.email":     { $regex: search, $options: "i" } },
-                    { "user.phone":     { $regex: search, $options: "i" } },
-                    { position:         { $regex: search, $options: "i" } },
-                    { employeeId:       { $regex: search, $options: "i" } },
+                    {
+                      "user.firstName": {
+                        $regex: search,
+                        $options: "i",
+                      },
+                    },
+                    {
+                      "user.lastName": {
+                        $regex: search,
+                        $options: "i",
+                      },
+                    },
+                    {
+                      "user.email": {
+                        $regex: search,
+                        $options: "i",
+                      },
+                    },
+                    {
+                      "user.phone": {
+                        $regex: search,
+                        $options: "i",
+                      },
+                    },
+                    {
+                      position: {
+                        $regex: search,
+                        $options: "i",
+                      },
+                    },
+                    {
+                      employeeId: {
+                        $regex: search,
+                        $options: "i",
+                      },
+                    },
                   ],
                 },
               },
             ]
           : []),
- 
-        // Stage 7: NOW we can sort by user.lastName because it exists at this point
-        // BRD FLT-010: default is lastName ascending
-        { $sort: { [`user.${sortBy}`]: sortDirection } },
- 
-        // Stage 8: count total before paginating (for pagination response)
-        // We use $facet to run two things at the same time:
-        // - "data": the actual paginated results
-        // - "total": just the count
+
+        // Stage 7: Sort
+        {
+          $sort: {
+            [`user.${sortBy}`]: sortDirection,
+          },
+        },
+
+        // Stage 8: Pagination + total count
         {
           $facet: {
-            data: [{ $skip: skip }, { $limit: limit }],
-            total: [{ $count: "count" }],
+            data: [
+              {
+                $skip: skip,
+              },
+              {
+                $limit: limit,
+              },
+            ],
+            total: [
+              {
+                $count: "count",
+              },
+            ],
           },
         },
       ];
- 
+
       const [result] = await Employee.aggregate(pipeline);
- 
+
       const employees = result.data;
       const total = result.total[0]?.count || 0;
 
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         data: employees,
         pagination: {
@@ -356,7 +442,8 @@ class EmployeeController {
       });
     } catch (error) {
       console.error("Get employees error:", error);
-      res.status(500).json({
+
+      return res.status(500).json({
         success: false,
         message: error.message || "Failed to fetch employees",
       });
@@ -378,7 +465,7 @@ class EmployeeController {
       })
         .populate(
           "user",
-          "firstName lastName email phone role isActive lastLogin"
+          "firstName lastName email phone role isActive lastLogin",
         )
         .populate("manager", "user employeeId position")
         .lean();
@@ -390,43 +477,41 @@ class EmployeeController {
         });
       }
 
-      // field-level access control — BRD 2.4
-      // Employees viewing their own profile get a filtered response
-      // HR+ gets the full record
+      // Field-level access control
       const role = req.user.role;
       const isOwnProfile = employee.user._id.toString() === req.user.id;
 
+      // Employees can view their own profile
       if (role === "employee" && isOwnProfile) {
-        // Employee can see their own data but not other employees' salary in full detail
         return res.status(200).json({
           success: true,
           data: {
-            employeeId:     employee.employeeId,
-            position:       employee.position,
-            department:     employee.department,
+            employeeId: employee.employeeId,
+            position: employee.position,
+            department: employee.department,
             employmentType: employee.employmentType,
-            startDate:      employee.startDate,
-            salary:         employee.salary,       // own salary — allowed
-            bankDetails:    employee.bankDetails,  // own bank details — allowed
+            startDate: employee.startDate,
+            salary: employee.salary,
+            bankDetails: employee.bankDetails,
             taxInformation: employee.taxInformation,
             user: {
               firstName: employee.user.firstName,
-              lastName:  employee.user.lastName,
-              email:     employee.user.email,
-              phone:     employee.user.phone,
+              lastName: employee.user.lastName,
+              email: employee.user.email,
+              phone: employee.user.phone,
             },
           },
         });
       }
 
-
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         data: employee,
       });
     } catch (error) {
       console.error("Get employee error:", error);
-      res.status(500).json({
+
+      return res.status(500).json({
         success: false,
         message: error.message || "Failed to fetch employee",
       });
@@ -456,26 +541,29 @@ class EmployeeController {
         });
       }
 
-        const allowedUpdates = [
-          "position",
-          "department",
-          "employmentType",
-          "salary",       // Admin/Founder only
-          "bankDetails",
-          "taxInformation",
-          "manager",
-        ];
+      const allowedUpdates = [
+        "position",
+        "department",
+        "employmentType",
+        "salary",
+        "bankDetails",
+        "taxInformation",
+        "manager",
+        "status",
+      ];
 
-      // NEW: bank details validation on update — hard errors + warnings
-      // firstName/lastName come from the User record — those fields live on User,
-      // not on the Employee model, and are updated via /api/auth/me
+      // Validate bank details when updating them
       if (updates.bankDetails) {
-        const employeeUser = await User.findById(employee.user).select("firstName lastName");
+        const employeeUser = await User.findById(employee.user).select(
+          "firstName lastName",
+        );
+
         const bankValidation = validateBankDetails(
           updates.bankDetails,
           employeeUser?.firstName,
-          employeeUser?.lastName
+          employeeUser?.lastName,
         );
+
         if (bankValidation.errors.length > 0) {
           return res.status(400).json({
             success: false,
@@ -483,11 +571,13 @@ class EmployeeController {
             errors: bankValidation.errors,
           });
         }
-        // store warnings to return in response
+
         req._bankWarnings = bankValidation.warnings;
       }
 
-      const before = { ...employee.toObject() };
+      const before = {
+        ...employee.toObject(),
+      };
 
       allowedUpdates.forEach((field) => {
         if (updates[field] !== undefined) {
@@ -515,18 +605,20 @@ class EmployeeController {
         severity: "medium",
       });
 
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         message: "Employee updated successfully",
-        // include bank warnings if any
+
         ...(req._bankWarnings?.length > 0 && {
           warnings: req._bankWarnings,
         }),
+
         data: employee,
       });
     } catch (error) {
       console.error("Update employee error:", error);
-      res.status(400).json({
+
+      return res.status(400).json({
         success: false,
         message: error.message || "Failed to update employee",
       });
@@ -534,11 +626,12 @@ class EmployeeController {
   }
 
   /**
-   * NEW: Employee updates their own profile (limited fields only)
+   * Employee updates their own profile
    * PATCH /api/employees/:id/profile
    *
-   * BRD 2.1 — employees can update own profile (limited fields)
-   * BRD 2.4 — employees can only update: phone, bank details, tax information
+   * Employees can update:
+   * - Bank details
+   * - Tax information
    */
   async updateOwnProfile(req, res) {
     try {
@@ -547,7 +640,10 @@ class EmployeeController {
       const { id } = req.params;
       const updates = req.body;
 
-      const employee = await Employee.findOne({ _id: id, company: companyId });
+      const employee = await Employee.findOne({
+        _id: id,
+        company: companyId,
+      });
 
       if (!employee) {
         return res.status(404).json({
@@ -556,7 +652,7 @@ class EmployeeController {
         });
       }
 
-      // Make sure the employee can only update their own profile
+      // Employee can only update their own profile
       if (employee.user.toString() !== userId) {
         return res.status(403).json({
           success: false,
@@ -564,17 +660,18 @@ class EmployeeController {
         });
       }
 
-      // Employees can only update these fields — BRD 2.4
       const allowedFields = ["bankDetails", "taxInformation"];
 
-      // NEW: bank details validation
+      // Validate bank details
       if (updates.bankDetails) {
         const user = await User.findById(userId).select("firstName lastName");
+
         const bankValidation = validateBankDetails(
           updates.bankDetails,
           user.firstName,
-          user.lastName
+          user.lastName,
         );
+
         if (bankValidation.errors.length > 0) {
           return res.status(400).json({
             success: false,
@@ -582,6 +679,7 @@ class EmployeeController {
             errors: bankValidation.errors,
           });
         }
+
         req._bankWarnings = bankValidation.warnings;
       }
 
@@ -593,6 +691,7 @@ class EmployeeController {
 
       await employee.save();
 
+      // Log audit
       await Audit.log({
         company: companyId,
         user: userId,
@@ -600,24 +699,29 @@ class EmployeeController {
         module: "employee",
         resourceType: "employee",
         resourceId: employee._id,
-        details: { updatedFields: Object.keys(updates) },
+        details: {
+          updatedFields: Object.keys(updates),
+        },
         ipAddress: req.ip,
         userAgent: req.get("user-agent"),
         status: "success",
         severity: "low",
       });
 
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         message: "Profile updated successfully",
+
         ...(req._bankWarnings?.length > 0 && {
           warnings: req._bankWarnings,
         }),
+
         data: employee,
       });
     } catch (error) {
       console.error("Update own profile error:", error);
-      res.status(400).json({
+
+      return res.status(400).json({
         success: false,
         message: error.message || "Failed to update profile",
       });
@@ -633,6 +737,7 @@ class EmployeeController {
       const companyId = req.user.company;
       const userId = req.user.id;
       const { id } = req.params;
+
       const { terminationDate, terminationReason } = req.body;
 
       const employee = await Employee.findOne({
@@ -651,10 +756,13 @@ class EmployeeController {
       employee.terminationDate = terminationDate || new Date();
       employee.terminationReason = terminationReason;
       employee.endDate = terminationDate || new Date();
+
       await employee.save();
 
       // Deactivate user account
-      await User.findByIdAndUpdate(employee.user, { isActive: false });
+      await User.findByIdAndUpdate(employee.user, {
+        isActive: false,
+      });
 
       // Log audit
       await Audit.log({
@@ -675,14 +783,15 @@ class EmployeeController {
         severity: "high",
       });
 
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         message: "Employee deactivated successfully",
         data: employee,
       });
     } catch (error) {
       console.error("Deactivate employee error:", error);
-      res.status(400).json({
+
+      return res.status(400).json({
         success: false,
         message: error.message || "Failed to deactivate employee",
       });
@@ -715,10 +824,13 @@ class EmployeeController {
       employee.terminationDate = null;
       employee.terminationReason = null;
       employee.endDate = null;
+
       await employee.save();
 
       // Activate user account
-      await User.findByIdAndUpdate(employee.user, { isActive: true });
+      await User.findByIdAndUpdate(employee.user, {
+        isActive: true,
+      });
 
       // Log audit
       await Audit.log({
@@ -737,14 +849,15 @@ class EmployeeController {
         severity: "medium",
       });
 
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         message: "Employee activated successfully",
         data: employee,
       });
     } catch (error) {
       console.error("Activate employee error:", error);
-      res.status(400).json({
+
+      return res.status(400).json({
         success: false,
         message: error.message || "Failed to activate employee",
       });
@@ -773,14 +886,17 @@ class EmployeeController {
         });
       }
 
-      // Soft delete - just deactivate
+      // Soft delete — deactivate employee
       employee.isActive = false;
       employee.terminationDate = new Date();
       employee.terminationReason = "Deleted by admin";
+
       await employee.save();
 
       // Deactivate user
-      await User.findByIdAndUpdate(employee.user, { isActive: false });
+      await User.findByIdAndUpdate(employee.user, {
+        isActive: false,
+      });
 
       // Log audit
       await Audit.log({
@@ -799,13 +915,14 @@ class EmployeeController {
         severity: "high",
       });
 
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         message: "Employee deleted successfully",
       });
     } catch (error) {
       console.error("Delete employee error:", error);
-      res.status(400).json({
+
+      return res.status(400).json({
         success: false,
         message: error.message || "Failed to delete employee",
       });
@@ -827,45 +944,91 @@ class EmployeeController {
         byEmploymentType,
         recentHires,
       ] = await Promise.all([
-        Employee.countDocuments({ company: companyId }),
-        Employee.countDocuments({ company: companyId, isActive: true }),
+        Employee.countDocuments({
+          company: companyId,
+        }),
+
+        Employee.countDocuments({
+          company: companyId,
+          isActive: true,
+        }),
+
         Employee.aggregate([
-          { $match: { company: companyId, isActive: true } },
-          { $group: { _id: "$department", count: { $sum: 1 } } },
-          { $sort: { count: -1 } },
+          {
+            $match: {
+              company: companyId,
+              isActive: true,
+            },
+          },
+          {
+            $group: {
+              _id: "$department",
+              count: {
+                $sum: 1,
+              },
+            },
+          },
+          {
+            $sort: {
+              count: -1,
+            },
+          },
         ]),
+
         Employee.aggregate([
-          { $match: { company: companyId, isActive: true } },
-          { $group: { _id: "$employmentType", count: { $sum: 1 } } },
+          {
+            $match: {
+              company: companyId,
+              isActive: true,
+            },
+          },
+          {
+            $group: {
+              _id: "$employmentType",
+              count: {
+                $sum: 1,
+              },
+            },
+          },
         ]),
-        Employee.find({ company: companyId, isActive: true })
-          .sort({ startDate: -1 })
+
+        Employee.find({
+          company: companyId,
+          isActive: true,
+        })
+          .sort({
+            startDate: -1,
+          })
           .limit(5)
           .populate("user", "firstName lastName email")
           .select("employeeId position startDate")
           .lean(),
       ]);
 
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         data: {
           totalEmployees,
           activeEmployees,
           inactiveEmployees: totalEmployees - activeEmployees,
-          byDepartment: byDepartment.map((d) => ({
-            department: d._id || "Unassigned",
-            count: d.count,
+
+          byDepartment: byDepartment.map((department) => ({
+            department: department._id || "Unassigned",
+            count: department.count,
           })),
-          byEmploymentType: byEmploymentType.map((t) => ({
-            type: t._id || "Unspecified",
-            count: t.count,
+
+          byEmploymentType: byEmploymentType.map((type) => ({
+            type: type._id || "Unspecified",
+            count: type.count,
           })),
+
           recentHires,
         },
       });
     } catch (error) {
       console.error("Get employee stats error:", error);
-      res.status(500).json({
+
+      return res.status(500).json({
         success: false,
         message: error.message || "Failed to fetch employee statistics",
       });
@@ -884,26 +1047,27 @@ class EmployeeController {
           headers: {
             Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`,
           },
-        }
+        },
       );
 
       if (!response.data || response.data.status !== "success") {
         throw new Error("Failed to fetch banks from Flutterwave");
       }
 
-      // Map to only what frontend needs — name and code
+      // Return only what the frontend needs
       const banks = response.data.data.map((bank) => ({
         name: bank.name,
         code: bank.code,
       }));
 
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         data: banks,
       });
     } catch (error) {
       console.error("Get Nigerian banks error:", error);
-      res.status(500).json({
+
+      return res.status(500).json({
         success: false,
         message: error.message || "Failed to fetch Nigerian banks",
       });

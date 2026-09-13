@@ -57,7 +57,7 @@ const payrollItemSchema = new mongoose.Schema({
 
   paymentStatus: {
     type: String,
-    enum: ["pending", "processing", "paid", "failed"],
+    enum: ["pending", "processing", "paid", "failed", "cancelled"],
     default: "pending",
   },
   paymentDate: Date,
@@ -164,7 +164,7 @@ const payrollSchema = new mongoose.Schema(
 
   {
     timestamps: true,
-  }
+  },
 );
 
 payrollSchema.index(
@@ -174,7 +174,7 @@ payrollSchema.index(
     "payrollPeriod.year": 1,
     "payrollPeriod.periodNumber": 1,
   },
-  { unique: true }
+  { unique: true },
 );
 
 export default mongoose.model("Payroll", payrollSchema);

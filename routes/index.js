@@ -6,11 +6,11 @@ import equityRoutes from "./esopRoutes.js";
 import financingRoutes from "./financingRoutes.js";
 import dashboardRoutes from "./dashboardRoutes.js";
 import companyRoutes from "./companyRoutes.js";
-import subscriptionRoutes from "./subscriptionRoutes.js"
+import subscriptionRoutes from "./subscriptionRoutes.js";
 import requireSubscription from "../middlewares/requireSubscription.js";
 import payrollController from "../controllers/payrollController.js";
+import auditRoutes from "./auditRoutes.js";
 import { protect } from "../middlewares/authMiddleware.js";
-
 
 const router = express.Router();
 
@@ -34,6 +34,7 @@ router.use("/employees", employeeRoutes);
 router.use("/dashboard", dashboardRoutes);
 router.use("/companies", companyRoutes);
 router.use("/subscriptions", subscriptionRoutes);
+router.use("/audit-logs", auditRoutes);
 
 /**
  * @route   POST /api/payroll/payment-webhook
@@ -46,7 +47,7 @@ router.post("/payroll/payment-webhook", payrollController.handlePaymentWebhook);
 router.post("/payroll/monnify-webhook", payrollController.handleMonnifyWebhook);
 
 // Feature-gated routes — require active subscription
-router.use("/payroll",protect, requireSubscription("payroll"), payrollRoutes);
+router.use("/payroll", protect, requireSubscription("payroll"), payrollRoutes);
 router.use("/financing", requireSubscription("financing"), financingRoutes);
 router.use("/equity", requireSubscription("esop"), equityRoutes);
 

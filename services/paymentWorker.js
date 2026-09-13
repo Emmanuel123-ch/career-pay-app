@@ -1,166 +1,525 @@
 import { Worker } from "bullmq";
+
 import { connection } from "../config/paymentQueue.js";
+
 import PaymentTransaction from "../models/paymentTransactionModel.js";
+
 import Payroll from "../models/payrollModel.js";
+
 import Audit from "../models/auditModel.js";
+
 import gateways, { GATEWAY_PRIORITY } from "./gateways/index.js";
 
-/**
- * Try each gateway in priority order
- * Falls back to next gateway if current one fails
- */
-async function disburseSinglePayment(transaction) {
+///**
+// * ============================================================
+// * DISBURSE SINGLE PAYMENT
+// * ============================================================
+//
+async function disburseSinglePayment(transaction, preferredGateway) {
   let lastError;
 
-  for (const gatewayName of GATEWAY_PRIORITY) {
-    try {
-      console.log(`Attempting payment via ${gatewayName} for transaction ${transaction._id}`);
+  const order =
+    preferredGateway && GATEWAY_PRIORITY.includes(preferredGateway)
+      ? [
+          preferredGateway,
+          ...GATEWAY_PRIORITY.filter((gateway) => gateway !== preferredGateway),
+        ]
+      : GATEWAY_PRIORITY;
 
-      const gateway = gateways[gatewayName];
+  for (const gatewayName of order) {
+    const gateway = gateways[gatewayName];
+
+    if (!gateway) {
+      console.error(`Gateway "${gatewayName}" is not configured`);
+      continue;
+    }
+
+    try {
+      console.log(
+        `Attempting payment via ${gatewayName} for transaction ${transaction._id}`,
+      );
+
       const result = await gateway.initiateTransfer(transaction);
 
-      console.log(`Payment initiated via ${gatewayName} for transaction ${transaction._id}`);
+      console.log(
+        `Payment initiated via ${gatewayName} for transaction ${transaction._id}`,
+      );
 
-      return { ...result, gateway: gatewayName };
-
+      return {
+        ...result,
+        gateway: gatewayName,
+      };
     } catch (error) {
       console.error(
-        `${gatewayName} failed for transaction ${transaction._id}: ${error.message} — trying next gateway`
+        `${gatewayName} failed for transaction ${transaction._id}: ${error.message}`,
       );
+
       lastError = error;
+
+      console.log(
+        `Trying next available gateway for transaction ${transaction._id}`,
+      );
     }
   }
 
-  // All gateways failed
-  throw lastError;
+  throw lastError || new Error("All configured payment gateways failed");
 }
 
 /**
- * Check if all payments for a payroll are settled
- * Updates payroll status to completed, partially_completed, or failed
+ * ============================================================
+ * CHECK AND FINALIZE PAYROLL
+ * ============================================================
+ *
+ * Payroll statuses:
+ *
+ * draft
+ * calculated
+ * approved
+ * processing
+ * completed
+ * failed
+ *
+ * We intentionally DO NOT use "partially_completed".
+ *
+ * If some employees are paid and others fail:
+ *
+ * payroll.status = "processing"
+ *
+ * This allows the administrator to retry the failed payments.
  */
 export async function checkAndFinalizePayroll(payrollId) {
   const payroll = await Payroll.findById(payrollId);
-  if (!payroll) return;
 
-  const transactions = await PaymentTransaction.find({ payroll: payrollId });
+  if (!payroll) {
+    console.error(`Cannot finalize payroll ${payrollId}: payroll not found`);
+    return;
+  }
 
-  const allSettled = transactions.every((t) =>
-    ["success", "failed"].includes(t.status)
+  const transactions = await PaymentTransaction.find({
+    payroll: payrollId,
+    company: payroll.company,
+  });
+
+  /**
+   * No transactions means the payroll payment process failed
+   * before payment transactions were created.
+   */
+  if (!transactions.length) {
+    payroll.status = "failed";
+
+    await payroll.save();
+
+    await Audit.log({
+      company: payroll.company,
+      user: payroll.processedBy,
+      action: "payroll_failed",
+      module: "payroll",
+      resourceType: "payroll",
+      resourceId: payroll._id,
+      details: {
+        reason: "No payment transactions were found",
+      },
+      status: "failure",
+      severity: "critical",
+    });
+
+    return;
+  }
+
+  /**
+   * Check whether every transaction has reached a final state.
+   *
+   * Final states:
+   * success
+   * failed
+   * cancelled
+   */
+  const allSettled = transactions.every((transaction) =>
+    ["success", "failed", "cancelled"].includes(transaction.status),
   );
 
-  if (!allSettled) return;
+  /**
+   * If at least one transaction is still pending or processing,
+   * the payroll remains processing.
+   */
+  if (!allSettled) {
+    payroll.status = "processing";
 
-  const anyFailed = transactions.some((t) => t.status === "failed");
-  const anySuccess = transactions.some((t) => t.status === "success");
+    await payroll.save();
 
-  if (anyFailed && anySuccess) {
-    payroll.status = "partially_completed";
-  } else if (anyFailed && !anySuccess) {
-    payroll.status = "failed";
-  } else {
+    return;
+  }
+
+  const successfulTransactions = transactions.filter(
+    (transaction) => transaction.status === "success",
+  );
+
+  const failedTransactions = transactions.filter(
+    (transaction) =>
+      transaction.status === "failed" || transaction.status === "cancelled",
+  );
+
+  /**
+   * ============================================================
+   * SYNC PAYMENT TRANSACTIONS WITH PAYROLL ITEMS
+   * ============================================================
+   */
+  for (const transaction of transactions) {
+    const payrollItem = payroll.payrollItems.find(
+      (item) => item.employee.toString() === transaction.employee.toString(),
+    );
+
+    if (!payrollItem) {
+      continue;
+    }
+
+    if (transaction.status === "success") {
+      payrollItem.paymentStatus = "paid";
+
+      payrollItem.paymentDate = transaction.paidAt || new Date();
+
+      payrollItem.paymentReference = transaction.paymentReference;
+    }
+
+    if (transaction.status === "failed" || transaction.status === "cancelled") {
+      payrollItem.paymentStatus = "failed";
+    }
+  }
+
+  /**
+   * ============================================================
+   * DETERMINE FINAL PAYROLL STATUS
+   * ============================================================
+   */
+
+  // Every payment succeeded
+  if (successfulTransactions.length === transactions.length) {
     payroll.status = "completed";
   }
 
-  // Update individual payroll items to match transaction status
-  for (const transaction of transactions) {
-    const item = payroll.payrollItems.find(
-      (i) => i.employee.toString() === transaction.employee.toString()
-    );
-    if (item) {
-      item.paymentStatus = transaction.status === "success" ? "paid" : "failed";
-      if (transaction.status === "success") {
-        item.paymentDate = transaction.paidAt;
-        item.paymentReference = transaction.paymentReference;
-      }
-    }
+  // Every payment failed/cancelled
+  else if (failedTransactions.length === transactions.length) {
+    payroll.status = "failed";
+  }
+
+  // Some succeeded and some failed
+  else {
+    payroll.status = "processing";
   }
 
   await payroll.save();
 
+  /**
+   * ============================================================
+   * AUDIT
+   * ============================================================
+   */
   await Audit.log({
     company: payroll.company,
     user: payroll.processedBy,
     action:
       payroll.status === "completed"
         ? "payroll_completed"
-        : payroll.status === "partially_completed"
-        ? "payroll_partially_completed"
-        : "payroll_failed",
+        : payroll.status === "failed"
+          ? "payroll_failed"
+          : "payroll_processed",
+
     module: "payroll",
+
     resourceType: "payroll",
+
     resourceId: payroll._id,
+
     details: {
       month: payroll.payrollPeriod.month,
       year: payroll.payrollPeriod.year,
+
       totalTransactions: transactions.length,
-      successful: transactions.filter((t) => t.status === "success").length,
-      failed: transactions.filter((t) => t.status === "failed").length,
+
+      successful: successfulTransactions.length,
+
+      failed: failedTransactions.length,
+
+      status: payroll.status,
     },
+
     status: "success",
+
     severity: "high",
   });
+
+  console.log(
+    `Payroll ${payroll._id} finalized with status: ${payroll.status}`,
+  );
 }
 
 /**
- * Worker — processes one payment job at a time
+ * ============================================================
+ * PAYMENT WORKER
+ * ============================================================
+ *
+ * BullMQ processes each employee payment independently.
+ *
+ * One payroll:
+ *
+ * Employee 1 → Payment Job 1
+ * Employee 2 → Payment Job 2
+ * Employee 3 → Payment Job 3
+ * ...
+ *
+ * This gives us bulk payroll processing while still tracking
+ * every employee payment individually.
  */
 const worker = new Worker(
   "payroll-payments",
+
   async (job) => {
-    const { transactionId } = job.data;
+    const { transactionId, preferredGateway } = job.data;
 
-    const transaction = await PaymentTransaction.findById(transactionId);
+    console.log(
+      `Starting payment job ${job.id} for transaction ${transactionId}`,
+    );
 
-    if (!transaction) {
+    /**
+     * ============================================================
+     * LOAD TRANSACTION
+     * ============================================================
+     */
+    const existingTransaction =
+      await PaymentTransaction.findById(transactionId);
+
+    if (!existingTransaction) {
       throw new Error(`Transaction ${transactionId} not found`);
     }
 
-    transaction.attemptCount += 1;
-    transaction.lastAttemptAt = new Date();
-    transaction.status = "processing";
-    await transaction.save();
+    /**
+     * ============================================================
+     * SAFETY CHECKS
+     * ============================================================
+     */
 
-    try {
-      const result = await disburseSinglePayment(transaction);
+    // Payment was cancelled before worker started
+    if (existingTransaction.status === "cancelled") {
+      console.log(`Skipping cancelled payment ${existingTransaction._id}`);
 
-      transaction.gatewayTransferId = result.transferId;
-      transaction.gatewayMessage = result.message;
-      transaction.gateway = result.gateway;
-      await transaction.save();
-    } catch (gatewayError) {
-      transaction.gatewayMessage = gatewayError.message;
+      return {
+        skipped: true,
+        reason: "cancelled",
+      };
+    }
 
-      if (transaction.attemptCount >= transaction.maxRetries) {
-        transaction.status = "failed";
-        transaction.failureReason = `Failed after ${transaction.maxRetries} attempts across all gateways. Last error: ${gatewayError.message}`;
-        await transaction.save();
+    // Payment has already succeeded
+    if (existingTransaction.status === "success") {
+      console.log(
+        `Skipping already successful payment ${existingTransaction._id}`,
+      );
 
-        await checkAndFinalizePayroll(transaction.payroll);
-      } else {
-        transaction.status = "pending";
-        await transaction.save();
+      return {
+        skipped: true,
+        reason: "already_successful",
+      };
+    }
+
+    /**
+     * ============================================================
+     * ATOMIC pending → processing
+     * ============================================================
+     *
+     * This is extremely important.
+     *
+     * If two workers somehow receive the same transaction,
+     * only one can change pending → processing.
+     */
+    const transaction = await PaymentTransaction.findOneAndUpdate(
+      {
+        _id: transactionId,
+        status: "pending",
+      },
+
+      {
+        $set: {
+          status: "processing",
+          lastAttemptAt: new Date(),
+        },
+
+        $inc: {
+          attemptCount: 1,
+        },
+      },
+
+      {
+        new: true,
+      },
+    );
+
+    /**
+     * Another worker/process already changed the transaction.
+     */
+    if (!transaction) {
+      const currentTransaction =
+        await PaymentTransaction.findById(transactionId);
+
+      if (!currentTransaction) {
+        throw new Error(`Transaction ${transactionId} not found`);
       }
 
+      if (currentTransaction.status === "cancelled") {
+        console.log(`Payment ${transactionId} was cancelled before processing`);
+
+        return {
+          skipped: true,
+          reason: "cancelled",
+        };
+      }
+
+      if (currentTransaction.status === "success") {
+        console.log(`Payment ${transactionId} is already successful`);
+
+        return {
+          skipped: true,
+          reason: "already_successful",
+        };
+      }
+
+      /**
+       * If it is already processing, do not send another
+       * gateway request.
+       */
+      if (currentTransaction.status === "processing") {
+        console.log(`Payment ${transactionId} is already processing`);
+
+        return {
+          skipped: true,
+          reason: "already_processing",
+        };
+      }
+
+      throw new Error(
+        `Transaction ${transactionId} is already ${currentTransaction.status}`,
+      );
+    }
+
+    /**
+     * ============================================================
+     * ATTEMPT PAYMENT
+     * ============================================================
+     */
+    try {
+      const result = await disburseSinglePayment(transaction, preferredGateway);
+
+      /**
+       * Gateway accepted the transfer.
+       *
+       * IMPORTANT:
+       * Keep status = processing.
+       *
+       * The webhook will later change it to success/failed.
+       */
+      transaction.gatewayTransferId = result.transferId || null;
+
+      transaction.gatewayMessage =
+        result.message || "Payment initiated successfully";
+
+      transaction.gateway = result.gateway;
+
+      transaction.status = "processing";
+
+      await transaction.save();
+
+      console.log(
+        `Payment ${transaction._id} initiated successfully via ${result.gateway}`,
+      );
+
+      return {
+        transactionId: transaction._id.toString(),
+        gateway: result.gateway,
+        status: "processing",
+        message: "Payment initiated and awaiting gateway confirmation",
+      };
+    } catch (gatewayError) {
+      /**
+       * ============================================================
+       * GATEWAY FAILURE
+       * ============================================================
+       */
+      console.error(
+        `Payment ${transaction._id} failed: ${gatewayError.message}`,
+      );
+
+      transaction.gatewayMessage = gatewayError.message;
+
+      /**
+       * Maximum retry reached.
+       */
+      if (transaction.attemptCount >= transaction.maxRetries) {
+        transaction.status = "failed";
+
+        transaction.failureReason =
+          `Failed after ${transaction.maxRetries} attempts across all gateways. ` +
+          `Last error: ${gatewayError.message}`;
+
+        await transaction.save();
+
+        console.error(
+          `Payment ${transaction._id} permanently failed after ${transaction.attemptCount} attempts`,
+        );
+
+        /**
+         * Check whether the payroll can now be finalized.
+         */
+        await checkAndFinalizePayroll(transaction.payroll);
+      } else {
+        /**
+         * Retry is still available.
+         */
+        transaction.status = "pending";
+
+        await transaction.save();
+
+        console.log(
+          `Payment ${transaction._id} returned to pending for retry ` +
+            `(${transaction.attemptCount}/${transaction.maxRetries})`,
+        );
+      }
+
+      /**
+       * Throwing allows BullMQ to register the job as failed
+       * and apply its configured retry/backoff policy.
+       */
       throw gatewayError;
     }
   },
+
   {
     connection,
+
+    /**
+     * Process up to 5 employee payments concurrently.
+     */
     concurrency: 5,
-  }
+  },
 );
 
-worker.on("completed", (job) => {
-  console.log(`Payment job ${job.id} completed — awaiting confirmation`);
+/**
+ * ============================================================
+ * WORKER EVENTS
+ * ============================================================
+ */
+
+worker.on("completed", (job, result) => {
+  console.log(`Payment job ${job.id} completed.`, result || "");
 });
 
 worker.on("failed", (job, error) => {
-  console.error(`Payment job ${job.id} failed: ${error.message}`);
+  console.error(`Payment job ${job?.id} failed: ${error.message}`);
 });
 
 worker.on("error", (error) => {
-  console.error("Worker error:", error);
+  console.error("Payment worker error:", error);
+});
+
+worker.on("stalled", (jobId) => {
+  console.warn(`Payment job ${jobId} has stalled and may be retried.`);
 });
 
 export default worker;

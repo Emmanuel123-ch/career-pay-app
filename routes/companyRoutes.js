@@ -1,13 +1,18 @@
 import express from "express";
 import Company from "../models/companyModel.js";
-import { protect, isFounderOrAdmin, requireVerified } from "../middlewares/authMiddleware.js";
+import Employee from "../models/employeeModel.js";
+import {
+  protect,
+  isFounderOrAdmin,
+  requireVerified,
+} from "../middlewares/authMiddleware.js";
 import Audit from "../models/auditModel.js";
 
 const router = express.Router();
 
 // All routes require authentication
 router.use(protect);
-router.use(requireVerified)
+router.use(requireVerified);
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
 // Re-evaluates whether a company has completed onboarding.
@@ -18,9 +23,9 @@ function checkOnboardingComplete(company) {
     !!company.payrollSettings?.payFrequency &&
     !!company.bankDetails &&
     !!company.isVerified &&
-    !!company.address?.street && 
-    !!company.address?.city &&    
-    !!company.address?.state 
+    !!company.address?.street &&
+    !!company.address?.city &&
+    !!company.address?.state
   );
 }
 
@@ -29,7 +34,7 @@ function checkOnboardingComplete(company) {
  * @desc    Get company profile (BR-001)
  * @access  Private
  */
-router.get("/profile", protect , async (req, res) => {
+router.get("/profile", protect, async (req, res) => {
   try {
     const company = await Company.findById(req.user.company).lean();
 
@@ -134,7 +139,7 @@ router.put("/profile", isFounderOrAdmin, async (req, res) => {
  * @desc    Update company settings (payroll, etc.)
  * @access  Private (Founder, Admin)
  */
-router.put("/settings", protect , isFounderOrAdmin, async (req, res) => {
+router.put("/settings", protect, isFounderOrAdmin, async (req, res) => {
   try {
     const companyId = req.user.company;
     const userId = req.user.id;
@@ -153,7 +158,7 @@ router.put("/settings", protect , isFounderOrAdmin, async (req, res) => {
       payrollSettings: company.payrollSettings,
       baseCurrency: company.baseCurrency,
       bankDetails: company.bankDetails,
-      address: company.address
+      address: company.address,
     };
 
     // Update settings
@@ -180,7 +185,6 @@ router.put("/settings", protect , isFounderOrAdmin, async (req, res) => {
       };
       // Tell Mongoose this nested object changed — it doesn't always detect spread updates
       company.markModified("payrollSettings");
-
     }
 
     if (baseCurrency) {
@@ -204,7 +208,7 @@ router.put("/settings", protect , isFounderOrAdmin, async (req, res) => {
           payrollSettings: company.payrollSettings,
           baseCurrency: company.baseCurrency,
           bankDetails: company.bankDetails,
-          address: company.address
+          address: company.address,
         },
       },
       ipAddress: req.ip,
@@ -228,6 +232,75 @@ router.put("/settings", protect , isFounderOrAdmin, async (req, res) => {
     res.status(400).json({
       success: false,
       message: error.message || "Failed to update company settings",
+    });
+  }
+});
+
+router.get("/stats", async (req, res) => {
+  try {
+    const companyId = req.user.company;
+
+    const [
+      totalEmployees,
+      activeEmployees,
+      inactiveEmployees,
+      departmentStats,
+    ] = await Promise.all([
+      Employee.countDocuments({
+        company: companyId,
+      }),
+
+      Employee.countDocuments({
+        company: companyId,
+        isActive: true,
+      }),
+
+      Employee.countDocuments({
+        company: companyId,
+        isActive: false,
+      }),
+
+      Employee.aggregate([
+        {
+          $match: {
+            company: companyId,
+            isActive: true,
+          },
+        },
+        {
+          $group: {
+            _id: "$department",
+            count: { $sum: 1 },
+          },
+        },
+        {
+          $sort: {
+            count: -1,
+          },
+        },
+      ]),
+    ]);
+
+    const departments = departmentStats.map((item) => ({
+      department: item._id || "Unassigned",
+      count: item.count,
+    }));
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalEmployees,
+        activeEmployees,
+        inactiveEmployees,
+        departments,
+      },
+    });
+  } catch (error) {
+    console.error("Get company stats error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to fetch company statistics",
     });
   }
 });

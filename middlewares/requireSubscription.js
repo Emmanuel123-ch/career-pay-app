@@ -8,12 +8,15 @@ import Subscription from "../models/subscriptionModel.js";
  */
 const requireSubscription = (module) => {
   return async (req, res, next) => {
+    if (process.env.DISABLE_SUBSCRIPTION_CHECK === "true") {
+      return next();
+    }
     try {
       const companyId = req.user.company;
 
       const isActive = await subscriptionService.hasActiveSubscription(
         companyId,
-        module
+        module,
       );
 
       if (isActive) {

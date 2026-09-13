@@ -1,6 +1,10 @@
 import jwt from "jsonwebtoken";
 import authService from "../services/authService.js";
-import { isValidEmail, isStrongPassword, isValidNigerianPhone, } from "../middlewares/validator.js";
+import {
+  isValidEmail,
+  isStrongPassword,
+  isValidNigerianPhone,
+} from "../middlewares/validator.js";
 
 class AuthController {
   /**
@@ -30,45 +34,45 @@ class AuthController {
         });
       }
 
-       // Validate company email ---
-    if (!isValidEmail(company.email)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid company email format",
-      });
-    }
+      // Validate company email ---
+      if (!isValidEmail(company.email)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid company email format",
+        });
+      }
 
-    if (!isValidNigerianPhone(company.phone)) {
-      return res.status(400).json({
-        success: false,
-        message: "Company phone number must be in +234XXXXXXXX format",
-      });
-    }
+      if (!isValidNigerianPhone(company.phone)) {
+        return res.status(400).json({
+          success: false,
+          message: "Company phone number must be in +234XXXXXXXX format",
+        });
+      }
 
-    // Validate user email ---
-    if (!isValidEmail(user.email)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid user email format",
-      });
-    }
+      // Validate user email ---
+      if (!isValidEmail(user.email)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid user email format",
+        });
+      }
 
-    // Validate user password ---
-    if (!isStrongPassword(user.password)) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Password must be at least 8 characters, contain 1 uppercase, 1 lowercase, 1 number, and 1 special character",
-      });
-    }
+      // Validate user password ---
+      if (!isStrongPassword(user.password)) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Password must be at least 8 characters, contain 1 uppercase, 1 lowercase, 1 number, and 1 special character",
+        });
+      }
 
-    // Validate user phone number (+234 format) ---
-    if (!isValidNigerianPhone(user.phone)) {
-      return res.status(400).json({
-        success: false,
-        message: "Phone number must be in +234XXXXXXXX format",
-      });
-    }
+      // Validate user phone number (+234 format) ---
+      if (!isValidNigerianPhone(user.phone)) {
+        return res.status(400).json({
+          success: false,
+          message: "Phone number must be in +234XXXXXXXX format",
+        });
+      }
 
       const ipAddress = req.ip || req.connection.remoteAddress;
       const userAgent = req.get("user-agent");
@@ -77,7 +81,7 @@ class AuthController {
         company,
         user,
         ipAddress,
-        userAgent
+        userAgent,
       );
 
       res.status(201).json({
@@ -94,23 +98,23 @@ class AuthController {
     }
   }
 
-   /**
+  /**
    * Verify company email after registration
    * GET /api/auth/verify-email/:token
    */
   async verifyEmail(req, res) {
     try {
       const { token } = req.params;
- 
+
       if (!token) {
         return res.status(400).json({
           success: false,
           message: "Verification token is required",
         });
       }
- 
+
       const result = await authService.verifyEmail(token);
- 
+
       res.status(200).json({
         success: true,
         message: result.message,
@@ -128,27 +132,27 @@ class AuthController {
   }
 
   /**
- * Resend verification email
- * POST /api/auth/resend-verification
- */
-async resendVerification(req, res) {
-  try {
-    const companyId = req.user.company;
+   * Resend verification email
+   * POST /api/auth/resend-verification
+   */
+  async resendVerification(req, res) {
+    try {
+      const companyId = req.user.company;
 
-    const result = await authService.resendVerificationEmail(companyId);
+      const result = await authService.resendVerificationEmail(companyId);
 
-    res.status(200).json({
-      success: true,
-      message: result.message,
-    });
-  } catch (error) {
-    console.error("Resend verification error:", error);
-    res.status(error.statusCode || 400).json({
-      success: false,
-      message: error.message || "Failed to resend verification email",
-    });
+      res.status(200).json({
+        success: true,
+        message: result.message,
+      });
+    } catch (error) {
+      console.error("Resend verification error:", error);
+      res.status(error.statusCode || 400).json({
+        success: false,
+        message: error.message || "Failed to resend verification email",
+      });
+    }
   }
-}
 
   /**
    * Login user
@@ -172,7 +176,7 @@ async resendVerification(req, res) {
         email,
         password,
         ipAddress,
-        userAgent
+        userAgent,
       );
 
       res.status(200).json({
@@ -224,34 +228,82 @@ async resendVerification(req, res) {
    * Logout user
    * POST /api/auth/logout
    */
+
+  /**
+   * Logout — designed to ALWAYS succeed (idempotent), per BRD LGT-004/LGT-005:
+   * an expired, invalid, or missing token must still return 200, since the
+   * user's intent (log me out) is already accomplished either way.
+   * POST /api/auth/logout
+   */
+
+  /**
+   * Logout — designed to ALWAYS succeed (idempotent), per BRD LGT-004/LGT-005:
+   * an expired, invalid, or missing token must still return 200, since the
+   * user's intent (log me out) is already accomplished either way.
+   * POST /api/auth/logout
+   */
   async logout(req, res) {
     try {
-      const userId = req.user.id;
-      const companyId = req.user.company;
-      const token = req.headers.authorization?.split(" ")[1];
+      const authHeader = req.headers.authorization;
+      const token = authHeader?.startsWith("Bearer")
+        ? authHeader.split(" ")[1]
+        : null;
+      const { refreshToken } = req.body || {};
 
-      const { refreshToken } = req.body
-      const ipAddress = req.ip || req.connection.remoteAddress;
-      const userAgent = req.get("user-agent");
+      let userId;
+      let companyId;
 
-      if (!refreshToken) {
-        return res.status(400).json({
-          success: false,
-          message: "Refresh token  required"
-        })
+      // Try to recover the user identity even from an expired token — we
+      // still want to blacklist it and log the event. A malformed or
+      // tampered token will fail here too, and that's fine: we just skip
+      // straight to returning success below.
+      if (token) {
+        try {
+          const decoded = jwt.verify(token, process.env.JWT_SECRET, {
+            ignoreExpiration: true,
+          });
+          userId = decoded.id;
+          companyId = decoded.companyId;
+        } catch (decodeError) {
+          // Invalid signature or malformed token — nothing to revoke, not an error case.
+        }
       }
 
-      await authService.logout(userId, token, refreshToken, companyId, ipAddress, userAgent);
+      const ipAddress = req.ip || req.connection?.remoteAddress;
+      const userAgent = req.get("user-agent");
+
+      // Best-effort: never let an internal failure here block the 200 response.
+      try {
+        if (userId) {
+          await authService.logout(
+            userId,
+            token,
+            refreshToken,
+            companyId,
+            ipAddress,
+            userAgent,
+          );
+        } else if (token) {
+          // We have a token but couldn't extract a user from it — still
+          // attempt to blacklist the raw token string defensively.
+          await authService.revokeAccessToken(token, null, "logout");
+        }
+      } catch (innerError) {
+        console.error(
+          "Logout side-effect error (non-fatal):",
+          innerError.message,
+        );
+      }
 
       res.status(200).json({
         success: true,
         message: "Logout successful",
       });
     } catch (error) {
-      console.error("Logout error:", error);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Logout failed",
+      console.error("Logout error (returning success anyway):", error);
+      res.status(200).json({
+        success: true,
+        message: "Logout successful",
       });
     }
   }
@@ -271,13 +323,13 @@ async resendVerification(req, res) {
         });
       }
 
-          // Validate user email ---
-    if (!isValidEmail(email)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid user email format",
-      });
-    }
+      // Validate user email ---
+      if (!isValidEmail(email)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid user email format",
+        });
+      }
       const result = await authService.requestPasswordReset(email);
 
       res.status(200).json({
@@ -312,12 +364,13 @@ async resendVerification(req, res) {
         });
       }
 
-        // Optional: enforce strength here too (defensive programming)
+      // Optional: enforce strength here too (defensive programming)
       if (!isStrongPassword(newPassword)) {
         return res.status(400).json({
           success: false,
-          message:"Password must contain 1 uppercase, 1 lowercase, 1 number and special character"
-      });
+          message:
+            "Password must contain 1 uppercase, 1 lowercase, 1 number and special character",
+        });
       }
 
       if (newPassword.length < 8) {
@@ -334,7 +387,7 @@ async resendVerification(req, res) {
         resetToken,
         newPassword,
         ipAddress,
-        userAgent
+        userAgent,
       );
 
       res.status(200).json({
@@ -367,12 +420,13 @@ async resendVerification(req, res) {
         });
       }
 
-        // Optional: enforce strength here too (defensive programming)
+      // Optional: enforce strength here too (defensive programming)
       if (!isStrongPassword(newPassword)) {
         return res.status(400).json({
           success: false,
-          message:"Password must contain 1 uppercase, 1 lowercase, 1 number and 1 special character"
-      });
+          message:
+            "Password must contain 1 uppercase, 1 lowercase, 1 number and 1 special character",
+        });
       }
 
       if (newPassword.length < 8) {
@@ -392,7 +446,7 @@ async resendVerification(req, res) {
         newPassword,
         refreshToken,
         ipAddress,
-        userAgent
+        userAgent,
       );
 
       res.status(200).json({
@@ -430,7 +484,6 @@ async resendVerification(req, res) {
     }
   }
 
-
   /**
    * Update Profile
    * PUT /api/auth/me
@@ -456,7 +509,7 @@ async resendVerification(req, res) {
         companyId,
         updates,
         ipAddress,
-        userAgent
+        userAgent,
       );
 
       return res.status(200).json({

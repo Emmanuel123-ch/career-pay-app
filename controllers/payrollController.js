@@ -43,19 +43,21 @@ class PayrollController {
 
       // cannot create payroll for a future month — BRD PAY-005
       const currentMonth = new Date().getMonth() + 1; // getMonth() is 0-indexed
-      if (year > currentYear || (year === currentYear && month > currentMonth)) {
+      if (
+        year > currentYear ||
+        (year === currentYear && month > currentMonth)
+      ) {
         return res.status(400).json({
           success: false,
           message: "Cannot create payroll for future months",
         });
       }
- 
 
       const { payroll, bankWarning } = await payrollService.createPayroll(
         companyId,
         month,
         year,
-        userId
+        userId,
       );
 
       res.status(201).json({
@@ -87,7 +89,7 @@ class PayrollController {
       const payroll = await payrollService.calculatePayroll(
         id,
         companyId,
-        userId
+        userId,
       );
 
       res.status(200).json({
@@ -125,7 +127,7 @@ class PayrollController {
       const payroll = await payrollService.approvePayroll(
         id,
         companyId,
-        userId
+        userId,
       );
 
       res.status(200).json({
@@ -151,7 +153,7 @@ class PayrollController {
       const companyId = req.user.company;
       const userId = req.user.id;
       const { id } = req.params;
-      const { useFinancing } = req.body;
+      const { useFinancing, preferredGateway } = req.body;
 
       // Check if user has permission to process
       if (req.user.role !== "founder" && req.user.role !== "admin") {
@@ -165,7 +167,8 @@ class PayrollController {
         id,
         companyId,
         userId,
-        useFinancing
+        useFinancing,
+        preferredGateway,
       );
 
       res.status(200).json({
@@ -218,18 +221,18 @@ class PayrollController {
         month: req.query.month,
         status: req.query.status,
         page: req.query.page,
-        limit: req.query.limit
+        limit: req.query.limit,
       };
 
       const result = await payrollService.getCompanyPayrolls(
         companyId,
-        filters
+        filters,
       );
 
       res.status(200).json({
         success: true,
         data: result.data,
-        pagination: result.pagination
+        pagination: result.pagination,
       });
     } catch (error) {
       console.error("Get payrolls error:", error);
@@ -267,7 +270,7 @@ class PayrollController {
       const payslip = await payrollService.getEmployeePayslip(
         id,
         employeeId,
-        companyId
+        companyId,
       );
 
       res.status(200).json({
@@ -296,7 +299,7 @@ class PayrollController {
       const exportData = await payrollService.exportPayroll(
         id,
         companyId,
-        userId
+        userId,
       );
 
       res.status(200).json({
@@ -402,6 +405,7 @@ class PayrollController {
    * Get current month payroll or create draft
    * GET /api/payroll/current
    */
+
   async getCurrentPayroll(req, res) {
     try {
       const companyId = req.user.company;
@@ -415,24 +419,25 @@ class PayrollController {
         year,
       });
 
-      // If no payroll exists, create a draft
       let payroll;
       if (!result.data || result.data.length === 0) {
         const created = await payrollService.createPayroll(
           companyId,
           month,
           year,
-          userId
+          userId,
         );
         payroll = created.payroll;
       } else {
-        payroll = result.data[0];
+        // Fetch the FULL record with payrollItems + populated employee data,
+        // not the trimmed list-view version
+        payroll = await payrollService.getPayrollById(
+          result.data[0]._id,
+          companyId,
+        );
       }
 
-      res.status(200).json({
-        success: true,
-        data: payroll,
-      });
+      res.status(200).json({ success: true, data: payroll });
     } catch (error) {
       console.error("Get current payroll error:", error);
       res.status(500).json({
@@ -443,9 +448,9 @@ class PayrollController {
   }
 
   /**
- * Correct a specific employee's payroll item
- * PATCH /api/payroll/:id/items/:employeeId
- */
+   * Correct a specific employee's payroll item
+   * PATCH /api/payroll/:id/items/:employeeId
+   */
   async correctPayrollItem(req, res) {
     try {
       const companyId = req.user.company;
@@ -476,7 +481,10 @@ class PayrollController {
         });
       }
 
-      if (overtime !== undefined && (typeof overtime !== "number" || overtime < 0)) {
+      if (
+        overtime !== undefined &&
+        (typeof overtime !== "number" || overtime < 0)
+      ) {
         return res.status(400).json({
           success: false,
           message: "overtime must be a non-negative number",
@@ -488,12 +496,13 @@ class PayrollController {
         companyId,
         employeeId,
         { bonus, overtime, allowances, otherDeductions },
-        userId
+        userId,
       );
 
       res.status(200).json({
         success: true,
-        message: "Payroll item corrected successfully. Payroll reset to draft for review.",
+        message:
+          "Payroll item corrected successfully. Payroll reset to draft for review.",
         data: payroll,
       });
     } catch (error) {
@@ -520,7 +529,8 @@ class PayrollController {
       if (!Array.isArray(compensationItems) || compensationItems.length === 0) {
         return res.status(400).json({
           success: false,
-          message: "Request body must be a non-empty array of compensation items",
+          message:
+            "Request body must be a non-empty array of compensation items",
         });
       }
 
@@ -544,14 +554,20 @@ class PayrollController {
           });
         }
 
-        if (item.bonus !== undefined && (typeof item.bonus !== "number" || item.bonus < 0)) {
+        if (
+          item.bonus !== undefined &&
+          (typeof item.bonus !== "number" || item.bonus < 0)
+        ) {
           return res.status(400).json({
             success: false,
             message: `Employee ${item.employeeId}: bonus must be a non-negative number`,
           });
         }
 
-        if (item.overtime !== undefined && (typeof item.overtime !== "number" || item.overtime < 0)) {
+        if (
+          item.overtime !== undefined &&
+          (typeof item.overtime !== "number" || item.overtime < 0)
+        ) {
           return res.status(400).json({
             success: false,
             message: `Employee ${item.employeeId}: overtime must be a non-negative number`,
@@ -570,7 +586,7 @@ class PayrollController {
         id,
         companyId,
         compensationItems,
-        userId
+        userId,
       );
 
       if (!result.success) {
@@ -583,7 +599,8 @@ class PayrollController {
 
       res.status(200).json({
         success: true,
-        message: "Compensation added successfully. You can now calculate payroll.",
+        message:
+          "Compensation added successfully. You can now calculate payroll.",
         data: result.payroll,
       });
     } catch (error) {
@@ -743,128 +760,339 @@ class PayrollController {
       } else if (eventType === "transfer.completed") {
         await handlePayrollTransferWebhook(event.data);
       }
-      // All other event types — acknowledge and ignore
 
-      // Always return 200 — tells Flutterwave we received it
       return res.status(200).json({ received: true });
     } catch (error) {
       console.error("Payment webhook error:", {
         message: error.message,
         status: error.response?.status,
-        data: error.response?.data, // 
+        data: error.response?.data,
       });
+
+      return res.status(500).json({
+        success: false,
+        message: "Webhook processing failed",
+      });
+
       // Still return 200 — prevent Flutterwave from retrying on our internal errors
       return res.status(200).json({ received: true });
     }
   }
 
-  // Handle Monnify webhook
   async handleMonnifyWebhook(req, res) {
-  try {
-     const signature = req.headers["monnify-signature"];
+    try {
+      const signature = req.headers["monnify-signature"];
 
-    if (!signature || !verifyMonnifySignature(req.body, signature)) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid webhook signature",
-      });
-    }
-    
-    const event = req.body;
-    const eventType = event.eventType;
+      if (!signature || !verifyMonnifySignature(req.body, signature)) {
+        return res.status(401).json({
+          success: false,
+          message: "Invalid webhook signature",
+        });
+      }
 
-    if (eventType === "SUCCESSFUL_DISBURSEMENT") {
-      const { reference } = event.eventData;
-      
+      const event = req.body;
+      const eventType = event.eventType;
+      const reference = event.eventData?.reference;
+
+      if (!reference) {
+        console.warn("Monnify webhook received without reference");
+        return res.status(400).json({
+          success: false,
+          message: "Payment reference is missing",
+        });
+      }
+
+      // Our gateway reference is:
+      // PAY-xxxx-xxxx-xxxxx-1
+      //
+      // The original transaction paymentReference is:
+      // PAY-xxxx-xxxx-xxxxx
+      const cleanReference = reference.replace(/-\d+$/, "");
+
       const transaction = await PaymentTransaction.findOne({
-        paymentReference: reference,
+        paymentReference: cleanReference,
+        gateway: "monnify",
       });
 
       if (!transaction) {
-        console.log(`No transaction found for Monnify reference: ${reference}`);
-        return res.status(200).json({ received: true });
+        console.log(
+          `No Monnify transaction found for reference: ${cleanReference} (raw: ${reference})`,
+        );
+
+        // Acknowledge unknown webhook so Monnify does not keep retrying
+        return res.status(200).json({
+          received: true,
+          message: "Transaction not found",
+        });
       }
 
-      if (["success", "failed"].includes(transaction.status)) {
-        return res.status(200).json({ received: true });
+      // Idempotency:
+      // Never modify a transaction that has already reached a final state.
+      if (["success", "failed", "cancelled"].includes(transaction.status)) {
+        console.log(
+          `Ignoring duplicate Monnify webhook for transaction ${transaction._id} with status ${transaction.status}`,
+        );
+
+        return res.status(200).json({
+          received: true,
+          message: "Transaction already settled",
+        });
       }
 
-      transaction.status = "success";
-      transaction.paidAt = new Date();
-      transaction.gatewayMessage = "Transfer successful via Monnify";
-      await transaction.save();
+      if (eventType === "SUCCESSFUL_DISBURSEMENT") {
+        transaction.status = "success";
+        transaction.paidAt = new Date();
+        transaction.gateway = "monnify";
+        transaction.gatewayTransferId =
+          event.eventData?.transactionReference ||
+          event.eventData?.reference ||
+          transaction.gatewayTransferId;
+        transaction.gatewayMessage =
+          event.eventData?.responseMessage || "Transfer successful via Monnify";
 
-      await payrollService.markPayrollItemPaid(
-        transaction.payroll,
-        transaction.employee,
-        reference
-      );
+        await transaction.save();
 
-      await checkAndFinalizePayroll(transaction.payroll);
+        await payrollService.markPayrollItemPaid(
+          transaction.payroll,
+          transaction.company,
+          transaction.employee,
+          cleanReference,
+        );
 
+        // Check whether the entire payroll has now settled
+        await checkAndFinalizePayroll(transaction.payroll);
+
+        // Payslip email should never block webhook processing
         setImmediate(async () => {
-        try {
-          const Payroll = (await import("../models/payrollModel.js")).default;
+          try {
+            const Payroll = (await import("../models/payrollModel.js")).default;
 
-          const payroll = await Payroll.findById(transaction.payroll);
+            const payroll = await Payroll.findById(transaction.payroll);
 
-          const payrollItem = payroll?.payrollItems.find(
-            (item) =>
-              item.employee.toString() === transaction.employee.toString()
-          );
+            const payrollItem = payroll?.payrollItems.find(
+              (item) =>
+                item.employee.toString() === transaction.employee.toString(),
+            );
 
-          const employee = await Employee.findById(
-            transaction.employee
-          ).populate("user", "firstName lastName email");
+            const employee = await Employee.findById(
+              transaction.employee,
+            ).populate("user", "firstName lastName email");
 
-          if (employee?.user?.email && payrollItem) {
-            await emailService.sendPayslipEmail(
-              {
-                firstName: employee.user.firstName,
-                email: employee.user.email,
-              },
-              payrollItem,
-              payroll.currency
+            if (employee?.user?.email && payrollItem) {
+              await emailService.sendPayslipEmail(
+                {
+                  firstName: employee.user.firstName,
+                  email: employee.user.email,
+                },
+                payrollItem,
+                payroll.currency,
+              );
+            }
+          } catch (emailError) {
+            console.error(
+              `Payslip email failed for employee ${transaction.employee}:`,
+              emailError.message,
             );
           }
-        } catch (emailError) {
-          console.error(
-            `Payslip email failed for employee ${transaction.employee}:`,
-            emailError.message
-          );
-        }
-      });
+        });
 
-    } else if (eventType === "FAILED_DISBURSEMENT") {
-      const { reference } = event.eventData;
+        console.log(`Monnify payment successful: ${transaction._id}`);
+      } else if (eventType === "FAILED_DISBURSEMENT") {
+        transaction.status = "failed";
+        transaction.gateway = "monnify";
+        transaction.failureReason =
+          event.eventData?.responseMessage || "Transfer failed via Monnify";
+        transaction.gatewayMessage =
+          event.eventData?.responseMessage || "Transfer failed via Monnify";
 
-      const transaction = await PaymentTransaction.findOne({
-        paymentReference: reference,
-      });
+        await transaction.save();
 
-      if (!transaction || ["success", "failed"].includes(transaction.status)) {
-        return res.status(200).json({ received: true });
+        // Recalculate overall payroll status
+        await checkAndFinalizePayroll(transaction.payroll);
+
+        console.log(`Monnify payment failed: ${transaction._id}`);
+      } else {
+        // Ignore unrelated Monnify events
+        console.log(`Ignoring Monnify event: ${eventType}`);
       }
 
-      transaction.status = "failed";
-      transaction.failureReason = event.eventData.responseMessage || "Transfer failed via Monnify";
-      transaction.gatewayMessage = event.eventData.responseMessage;
-      await transaction.save();
+      return res.status(200).json({
+        received: true,
+      });
+    } catch (error) {
+      console.error("Monnify webhook error:", {
+        message: error.message,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
 
-      await checkAndFinalizePayroll(transaction.payroll);
+      // Internal error — allow gateway to retry
+      return res.status(500).json({
+        success: false,
+        message: "Webhook processing failed",
+      });
     }
-
-    return res.status(200).json({ received: true });
-  } catch (error) {
-    console.error("Monnify webhook error:", error.message);
-    return res.status(200).json({ received: true });
   }
-}
 
-   /**
- * Retry failed payments for a partially completed or failed payroll
- * POST /api/payroll/:id/retry-failed
- */
+  async handleMonnifyWebhook(req, res) {
+    try {
+      const signature = req.headers["monnify-signature"];
+
+      if (!signature || !verifyMonnifySignature(req.body, signature)) {
+        return res.status(401).json({
+          success: false,
+          message: "Invalid webhook signature",
+        });
+      }
+
+      const event = req.body;
+      const eventType = event.eventType;
+      const reference = event.eventData?.reference;
+
+      if (!reference) {
+        console.warn("Monnify webhook received without reference");
+        return res.status(400).json({
+          success: false,
+          message: "Payment reference is missing",
+        });
+      }
+
+      // Our gateway reference is:
+      // PAY-xxxx-xxxx-xxxxx-1
+      //
+      // The original transaction paymentReference is:
+      // PAY-xxxx-xxxx-xxxxx
+      const cleanReference = reference.replace(/-\d+$/, "");
+
+      const transaction = await PaymentTransaction.findOne({
+        paymentReference: cleanReference,
+        gateway: "monnify",
+      });
+
+      if (!transaction) {
+        console.log(
+          `No Monnify transaction found for reference: ${cleanReference} (raw: ${reference})`,
+        );
+
+        // Acknowledge unknown webhook so Monnify does not keep retrying
+        return res.status(200).json({
+          received: true,
+          message: "Transaction not found",
+        });
+      }
+
+      // Idempotency:
+      // Never modify a transaction that has already reached a final state.
+      if (["success", "failed", "cancelled"].includes(transaction.status)) {
+        console.log(
+          `Ignoring duplicate Monnify webhook for transaction ${transaction._id} with status ${transaction.status}`,
+        );
+
+        return res.status(200).json({
+          received: true,
+          message: "Transaction already settled",
+        });
+      }
+
+      if (eventType === "SUCCESSFUL_DISBURSEMENT") {
+        transaction.status = "success";
+        transaction.paidAt = new Date();
+        transaction.gateway = "monnify";
+        transaction.gatewayTransferId =
+          event.eventData?.transactionReference ||
+          event.eventData?.reference ||
+          transaction.gatewayTransferId;
+        transaction.gatewayMessage =
+          event.eventData?.responseMessage || "Transfer successful via Monnify";
+
+        await transaction.save();
+
+        // Keep payroll item in sync
+        await payrollService.markPayrollItemPaid(
+          transaction.payroll,
+          transaction.employee,
+          cleanReference,
+        );
+
+        // Check whether the entire payroll has now settled
+        await checkAndFinalizePayroll(transaction.payroll);
+
+        // Payslip email should never block webhook processing
+        setImmediate(async () => {
+          try {
+            const Payroll = (await import("../models/payrollModel.js")).default;
+
+            const payroll = await Payroll.findById(transaction.payroll);
+
+            const payrollItem = payroll?.payrollItems.find(
+              (item) =>
+                item.employee.toString() === transaction.employee.toString(),
+            );
+
+            const employee = await Employee.findById(
+              transaction.employee,
+            ).populate("user", "firstName lastName email");
+
+            if (employee?.user?.email && payrollItem) {
+              await emailService.sendPayslipEmail(
+                {
+                  firstName: employee.user.firstName,
+                  email: employee.user.email,
+                },
+                payrollItem,
+                payroll.currency,
+              );
+            }
+          } catch (emailError) {
+            console.error(
+              `Payslip email failed for employee ${transaction.employee}:`,
+              emailError.message,
+            );
+          }
+        });
+
+        console.log(`Monnify payment successful: ${transaction._id}`);
+      } else if (eventType === "FAILED_DISBURSEMENT") {
+        transaction.status = "failed";
+        transaction.gateway = "monnify";
+        transaction.failureReason =
+          event.eventData?.responseMessage || "Transfer failed via Monnify";
+        transaction.gatewayMessage =
+          event.eventData?.responseMessage || "Transfer failed via Monnify";
+
+        await transaction.save();
+
+        // Recalculate overall payroll status
+        await checkAndFinalizePayroll(transaction.payroll);
+
+        console.log(`Monnify payment failed: ${transaction._id}`);
+      } else {
+        // Ignore unrelated Monnify events
+        console.log(`Ignoring Monnify event: ${eventType}`);
+      }
+
+      return res.status(200).json({
+        received: true,
+      });
+    } catch (error) {
+      console.error("Monnify webhook error:", {
+        message: error.message,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+
+      // Internal error — allow gateway to retry
+      return res.status(500).json({
+        success: false,
+        message: "Webhook processing failed",
+      });
+    }
+  }
+
+  /**
+   * Retry failed payments for a partially completed or failed payroll
+   * POST /api/payroll/:id/retry-failed
+   */
   async retryFailedPayments(req, res) {
     try {
       const companyId = req.user.company;
@@ -882,7 +1110,7 @@ class PayrollController {
       const result = await payrollService.retryFailedPayments(
         id,
         companyId,
-        userId
+        userId,
       );
 
       return res.status(200).json({
@@ -895,6 +1123,73 @@ class PayrollController {
       return res.status(400).json({
         success: false,
         message: error.message || "Failed to retry payments",
+      });
+    }
+  }
+
+  /**
+   * Cancel pending payroll payments
+   * POST /api/payroll/:id/cancel
+   */
+  async cancelPayroll(req, res) {
+    try {
+      const companyId = req.user.company;
+      const userId = req.user.id;
+      const { id } = req.params;
+
+      // Only founders and admins can cancel payroll payments
+      if (req.user.role !== "founder" && req.user.role !== "admin") {
+        return res.status(403).json({
+          success: false,
+          message: "Only founders and admins can cancel payroll payments",
+        });
+      }
+
+      const result = await payrollService.cancelPayroll(id, companyId, userId);
+
+      return res.status(200).json({
+        success: true,
+        message: result.message,
+        data: result.payroll,
+        cancelledCount: result.cancelledCount,
+      });
+    } catch (error) {
+      console.error("Cancel payroll error:", error);
+
+      return res.status(400).json({
+        success: false,
+        message: error.message || "Failed to cancel payroll payments",
+      });
+    }
+  }
+
+  async resetPayroll(req, res) {
+    try {
+      const companyId = req.user.company;
+      const userId = req.user.id;
+      const { id } = req.params;
+
+      // Only founders and admins can reset payroll
+      if (req.user.role !== "founder" && req.user.role !== "admin") {
+        return res.status(403).json({
+          success: false,
+          message: "Only founders and admins can reset payroll",
+        });
+      }
+
+      const result = await payrollService.resetPayroll(id, companyId, userId);
+
+      return res.status(200).json({
+        success: true,
+        message: result.message,
+        data: result.payroll,
+      });
+    } catch (error) {
+      console.error("Reset payroll error:", error);
+
+      return res.status(error.statusCode || 400).json({
+        success: false,
+        message: error.message || "Failed to reset payroll",
       });
     }
   }
@@ -938,7 +1233,9 @@ async function handleSubscriptionWebhook(data) {
       userId: meta.userId,
     });
 
-    console.log(`Subscription activated via webhook: ${meta.module} for company ${meta.companyId}`);
+    console.log(
+      `Subscription activated via webhook: ${meta.module} for company ${meta.companyId}`,
+    );
   } catch (error) {
     console.error("Subscription webhook handler error:", error.message);
     throw error;
@@ -949,42 +1246,65 @@ async function handleSubscriptionWebhook(data) {
  * Handle payroll flutterwave transfer webhook
  * Fires when Flutterwave completes a salary transfer to an employee
  */
+
 async function handlePayrollTransferWebhook(data) {
   try {
-    const { reference, status, complete_message } = data;
+    const { reference, status, complete_message, id } = data;
+
+    if (!reference) {
+      console.warn("Flutterwave transfer webhook received without reference");
+      return;
+    }
 
     const cleanReference = reference
-      .replace(/_PMCK_ST_F$/, "")  
-      .replace(/_PMCK$/, "")        
-      .replace(/-\d+$/, ""); 
+      .replace(/_PMCK_ST_F$/, "")
+      .replace(/_PMCK$/, "")
+      .replace(/-\d+$/, "");
 
-    // Find our transaction record
     const transaction = await PaymentTransaction.findOne({
       paymentReference: cleanReference,
     });
 
     if (!transaction) {
-      console.log(`No transaction found for reference: ${cleanReference} (raw: ${reference})`);
+      console.log(
+        `No transaction found for Flutterwave reference: ${cleanReference} (raw: ${reference})`,
+      );
       return;
     }
 
-    // Prevent duplicate processing
-    if (["success", "failed"].includes(transaction.status)) return;
+    // Idempotency
+    if (["success", "failed", "cancelled"].includes(transaction.status)) {
+      console.log(
+        `Ignoring duplicate Flutterwave webhook for transaction ${transaction._id} with status ${transaction.status}`,
+      );
+      return;
+    }
+
+    transaction.gateway = "flutterwave";
 
     if (status === "SUCCESSFUL") {
       transaction.status = "success";
       transaction.paidAt = new Date();
-      transaction.gatewayMessage = "Transfer successful";
+      transaction.gatewayTransferId =
+        id?.toString() || transaction.gatewayTransferId;
+      transaction.gatewayMessage =
+        complete_message || "Transfer successful via Flutterwave";
+
       await transaction.save();
 
-      // Mark payroll item as paid
+      // Update payroll item
       await payrollService.markPayrollItemPaid(
         transaction.payroll,
         transaction.employee,
-        cleanReference
+        cleanReference,
       );
 
-      // Send payslip email — outside main flow so email failure never blocks webhook
+      console.log(`Flutterwave payment successful: ${transaction._id}`);
+
+      // Finalize payroll if all employees are settled
+      await checkAndFinalizePayroll(transaction.payroll);
+
+      // Send payslip asynchronously
       setImmediate(async () => {
         try {
           const Payroll = (await import("../models/payrollModel.js")).default;
@@ -993,11 +1313,11 @@ async function handlePayrollTransferWebhook(data) {
 
           const payrollItem = payroll?.payrollItems.find(
             (item) =>
-              item.employee.toString() === transaction.employee.toString()
+              item.employee.toString() === transaction.employee.toString(),
           );
 
           const employee = await Employee.findById(
-            transaction.employee
+            transaction.employee,
           ).populate("user", "firstName lastName email");
 
           if (employee?.user?.email && payrollItem) {
@@ -1007,32 +1327,36 @@ async function handlePayrollTransferWebhook(data) {
                 email: employee.user.email,
               },
               payrollItem,
-              payroll.currency
+              payroll.currency,
             );
           }
         } catch (emailError) {
           console.error(
             `Payslip email failed for employee ${transaction.employee}:`,
-            emailError.message
+            emailError.message,
           );
         }
       });
     } else {
-      // Transfer failed at bank level
       transaction.status = "failed";
       transaction.failureReason = complete_message || "Transfer failed at bank";
-      transaction.gatewayMessage = complete_message;
-      await transaction.save();
-    }
+      transaction.gatewayMessage =
+        complete_message || "Transfer failed at bank";
 
-    // Check if all payments for this payroll are now settled
-    await checkAndFinalizePayroll(transaction.payroll);
+      await transaction.save();
+
+      console.log(`Flutterwave payment failed: ${transaction._id}`);
+
+      // Recalculate overall payroll status
+      await checkAndFinalizePayroll(transaction.payroll);
+    }
   } catch (error) {
     console.error("Payroll transfer webhook handler error:", {
-    message: error.message,
-    status: error.response?.status,
-    data: error.response?.data, // 
-  });
+      message: error.message,
+      status: error.response?.status,
+      data: error.response?.data,
+    });
+
     throw error;
   }
 }

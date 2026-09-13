@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import User from "../models/userModel.js";
 import Employee from "../models/employeeModel.js";
+import RevokedToken from "../models/revokedToken.js";
 
 /**
  * Verify JWT token and attach user to request
@@ -26,6 +27,17 @@ export const protect = async (req, res, next) => {
 
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Reject the token if it was revoked (e.g. via logout) — per BRD VRF-005.
+    // Without this check, a "logged out" token stays valid until its natural
+    // expiry, which defeats the purpose of blacklisting it on logout.
+    const isRevoked = await RevokedToken.findOne({ token });
+    if (isRevoked) {
+      return res.status(401).json({
+        success: false,
+        message: "Your session is no longer valid. Please login again",
+      });
+    }
 
     // Check if user still exists
     const user = await User.findById(decoded.id)
@@ -149,7 +161,10 @@ export const isHROrAbove = (req, res, next) => {
  */
 export const verifyEmployeeOwnership = async (req, res, next) => {
   try {
-    const { employeeId } = req.params;
+    // Route params use ":id" (see employeeRoutes.js), not ":employeeId" —
+    // previously this always read undefined and blocked every employee
+    // from viewing their own profile.
+    const { id: employeeId } = req.params;
     const userId = req.user.id;
     const userRole = req.user.role;
 

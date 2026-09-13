@@ -22,3 +22,15 @@ const paymentQueue = new Queue("payroll-payments", {
 });
 
 export { paymentQueue, connection };
+
+connection.on("connect", () => {
+  console.log("✅ Redis connected");
+});
+
+connection.on("ready", () => {
+  console.log("✅ Redis ready");
+});
+
+connection.on("error", (err) => {
+  console.error("❌ Redis error:", err.message);
+});
