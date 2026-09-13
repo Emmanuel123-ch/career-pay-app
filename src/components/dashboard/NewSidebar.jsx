@@ -12,7 +12,7 @@ import {
   LogOut,
   ChevronRight,
   ShieldCheck,
-  Briefcase
+  Briefcase,
 } from "lucide-react";
 
 const navItems = [
@@ -23,7 +23,7 @@ const navItems = [
     id: "employee",
     children: [
       { label: "Add Employees", id: "add-employees" },
-      { label: "View Employees", id: "view-employees" }
+      { label: "View Employees", id: "view-employees" },
     ],
   },
   {
@@ -32,12 +32,13 @@ const navItems = [
     id: "payroll",
     children: [
       { label: "Run Payroll", id: "payroll" },
-      { label: "Payslips", id: "payslip" }
+      { label: "Payslips", id: "payslip" },
     ],
   },
   { icon: PieIcon, label: "ESOP", id: "esop" },
   { icon: Wallet, label: "Financing", id: "financing" },
   { icon: Bell, label: "Notification", id: "notification" },
+  { icon: ShieldCheck, label: "Payment Gateway", id: "payment-gateway" },
   { icon: Settings, label: "Settings", id: "settings" },
 ];
 
@@ -47,7 +48,7 @@ export default function NewSidebar({
   isOpen,
   onClose,
   onLogout,
-  user
+  user,
 }) {
   const [openMenus, setOpenMenus] = useState({
     employee: true,
@@ -82,11 +83,18 @@ export default function NewSidebar({
               <ShieldCheck className="text-white" size={24} />
             </div>
             <div className="flex flex-col">
-              <span className="text-lg font-black text-white leading-none tracking-tight">CAREERPAY</span>
-              <span className="text-[10px] text-blue-400 font-bold uppercase tracking-[0.2em] mt-1">Founders</span>
+              <span className="text-lg font-black text-white leading-none tracking-tight">
+                CAREERPAY
+              </span>
+              <span className="text-[10px] text-blue-400 font-bold uppercase tracking-[0.2em] mt-1">
+                Founders
+              </span>
             </div>
           </div>
-          <button onClick={onClose} className="lg:hidden text-white/40 hover:text-white transition-colors">
+          <button
+            onClick={onClose}
+            className="lg:hidden text-white/40 hover:text-white transition-colors"
+          >
             <X size={20} />
           </button>
         </div>
@@ -94,20 +102,31 @@ export default function NewSidebar({
         {/* Navigation */}
         <nav className="flex-1 px-4 space-y-1.5 overflow-y-auto custom-scrollbar">
           {navItems.map((item) => {
-            const isActive = activePage === item.id || (item.children?.some(c => c.id === activePage));
+            const isActive =
+              activePage === item.id ||
+              item.children?.some((c) => c.id === activePage);
             const isMenuOpen = openMenus[item.id];
 
             return (
               <div key={item.id} className="space-y-1">
                 <button
-                  onClick={() => item.children ? toggleMenu(item.id) : setActivePage(item.id)}
+                  onClick={() =>
+                    item.children ? toggleMenu(item.id) : setActivePage(item.id)
+                  }
                   className={`w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl text-sm font-semibold transition-all duration-300 group ${
                     isActive && !item.children
                       ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20"
                       : "text-gray-400 hover:text-white hover:bg-white/5"
                   }`}
                 >
-                  <item.icon size={20} className={isActive ? "text-white" : "text-gray-500 group-hover:text-blue-400 transition-colors"} />
+                  <item.icon
+                    size={20}
+                    className={
+                      isActive
+                        ? "text-white"
+                        : "text-gray-500 group-hover:text-blue-400 transition-colors"
+                    }
+                  />
                   <span className="flex-1 text-left">{item.label}</span>
                   {item.children && (
                     <ChevronDown
@@ -145,12 +164,19 @@ export default function NewSidebar({
             <div className="flex items-center gap-3 mb-3">
               <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 p-0.5">
                 <div className="w-full h-full rounded-full bg-[#0a1628] flex items-center justify-center overflow-hidden">
-                  <img src={`https://ui-avatars.com/api/?name=${user?.firstName}+${user?.lastName}&background=random`} alt="User" />
+                  <img
+                    src={`https://ui-avatars.com/api/?name=${user?.firstName}+${user?.lastName}&background=random`}
+                    alt="User"
+                  />
                 </div>
               </div>
               <div className="flex flex-col">
-                <span className="text-sm font-bold text-white">{user?.firstName} {user?.lastName}</span>
-                <span className="text-[10px] text-gray-500 font-medium capitalize">{user?.role || "Founder & CEO"}</span>
+                <span className="text-sm font-bold text-white">
+                  {user?.firstName} {user?.lastName}
+                </span>
+                <span className="text-[10px] text-gray-500 font-medium capitalize">
+                  {user?.role || "Founder & CEO"}
+                </span>
               </div>
             </div>
             <button

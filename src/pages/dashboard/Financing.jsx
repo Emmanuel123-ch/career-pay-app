@@ -1,198 +1,452 @@
 import React, { useState, useEffect } from "react";
-import { 
-  Wallet, 
-  TrendingUp, 
-  ArrowUpRight, 
-  ArrowDownRight, 
-  Clock, 
-  ShieldCheck, 
-  Plus, 
-  Search,
-  MoreVertical,
-  Download,
-  PieChart as PieIcon,
+import {
+  Wallet,
   Landmark,
-  Zap,
-  CheckCircle2,
+  ShieldCheck,
+  Clock,
+  Plus,
+  X,
+  Loader2,
+  AlertCircle,
   ChevronRight,
-  MoreHorizontal
 } from "lucide-react";
-import { getCurrentPayroll } from "../../services/payroll";
+import {
+  applyForFinancing,
+  getCompanyFinancing,
+  disburseFinancing,
+  makeRepayment,
+  getFinancingStats,
+} from "../../services/financing";
 import { motion, AnimatePresence } from "framer-motion";
 
-const StatCard = ({ label, value, change, icon: Icon, color, trend }) => (
-  <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm hover:shadow-xl hover:shadow-blue-500/5 transition-all group relative overflow-hidden">
-    <div className="flex items-start justify-between relative z-10">
-      <div className={`p-4 rounded-2xl ${color} bg-opacity-10 text-${color.split('-')[1]}-600 group-hover:scale-110 transition-transform duration-500`}>
-        <Icon size={24} />
-      </div>
-      {change && (
-        <div className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${trend === 'up' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
-          {change}
-        </div>
-      )}
+const STATUS_STYLES = {
+  approved: "bg-green-50 text-green-600",
+  under_review: "bg-yellow-50 text-yellow-600",
+  rejected: "bg-red-50 text-red-600",
+  active: "bg-blue-50 text-blue-600",
+  completed: "bg-gray-100 text-gray-600",
+  defaulted: "bg-red-100 text-red-700",
+};
+
+const StatCard = ({ label, value, icon: Icon, bg, iconColor }) => (
+  <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm hover:shadow-xl hover:shadow-blue-500/5 transition-all relative overflow-hidden">
+    <div className={`p-4 rounded-2xl  ${bg} w-fit`}>
+      <Icon size={24} strokeWidth={2.5} className={iconColor} />
     </div>
-    <div className="mt-6 relative z-10">
+    <div className="mt-6">
       <p className="text-gray-500 text-sm font-medium mb-1">{label}</p>
-      <h3 className="text-3xl font-black text-gray-900 tracking-tight">{value}</h3>
+      <h3 className="text-3xl font-black text-gray-900 tracking-tight">
+        {value}
+      </h3>
     </div>
-    <div className={`absolute -right-4 -bottom-4 w-24 h-24 ${color} opacity-[0.03] rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700`}></div>
   </div>
 );
 
-const Financing = () => {
-  const [payrollData, setPayrollData] = useState(null);
+const inputClass =
+  "w-full px-4 py-3 rounded-xl bg-gray-50 border border-transparent outline-none focus:ring-2 focus:ring-[#1D4EFF] transition-all text-sm font-medium";
+
+function ApplyModal({ onClose, onApplied }) {
+  const [form, setForm] = useState({
+    requestedAmount: "",
+    purpose: "payroll",
+    repaymentTermDays: "30",
+    repaymentFrequency: "monthly",
+    monthlyPayrollCost: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSubmit = async () => {
+    if (!form.requestedAmount || !form.repaymentTermDays) {
+      setError("Requested amount and repayment term are required.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const res = await applyForFinancing({
+        requestedAmount: Number(form.requestedAmount),
+        currency: "NGN",
+        purpose: form.purpose,
+        repaymentTermDays: Number(form.repaymentTermDays),
+        repaymentFrequency: form.repaymentFrequency,
+        companyDetails: {
+          monthlyPayrollCost: Number(form.monthlyPayrollCost) || undefined,
+        },
+      });
+      if (res.success) {
+        onApplied(res.message);
+      }
+    } catch (err) {
+      const data = err.response?.data;
+      let message = data?.message || "Application failed. Please try again.";
+      if (data?.reasons?.length) {
+        message += " — " + data.reasons.join("; ");
+      }
+      if (data?.maxCreditLimit) {
+        message += ` (Max: ₦${data.maxCreditLimit.toLocaleString()})`;
+      }
+      setError(message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-6">
+      <div className="bg-white rounded-[2rem] max-w-3xl w-full p-8 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-black text-gray-900">
+            New Loan Application
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-700"
+          >
+            <X size={22} />
+          </button>
+        </div>
+
+        {error && (
+          <div className="mb-4 flex items-start gap-2 bg-red-50 text-red-700 rounded-xl px-4 py-3 text-sm font-bold">
+            <AlertCircle size={16} className="mt-0.5 shrink-0" />{" "}
+            <span>{error}</span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="md:col-span-2 space-y-1">
+            <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+              Requested Amount (₦)*
+            </label>
+            <input
+              type="number"
+              min="1"
+              name="requestedAmount"
+              value={form.requestedAmount}
+              onChange={handleChange}
+              placeholder="e.g. 2000000"
+              className={inputClass}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+              Monthly Payroll Cost (₦)
+            </label>
+            <input
+              type="number"
+              min="0"
+              name="monthlyPayrollCost"
+              value={form.monthlyPayrollCost}
+              onChange={handleChange}
+              placeholder="Used to calculate your credit limit"
+              className={inputClass}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+              Purpose
+            </label>
+            <select
+              name="purpose"
+              value={form.purpose}
+              onChange={handleChange}
+              className={`${inputClass} appearance-none cursor-pointer`}
+            >
+              <option value="payroll">Payroll</option>
+              <option value="expansion">Expansion</option>
+              <option value="working_capital">Working Capital</option>
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+              Repayment Term*
+            </label>
+            <select
+              name="repaymentTermDays"
+              value={form.repaymentTermDays}
+              onChange={handleChange}
+              className={`${inputClass} appearance-none cursor-pointer`}
+            >
+              <option value="30">30 days</option>
+              <option value="60">60 days</option>
+              <option value="90">90 days</option>
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+              Repayment Frequency
+            </label>
+            <select
+              name="repaymentFrequency"
+              value={form.repaymentFrequency}
+              onChange={handleChange}
+              className={`${inputClass} appearance-none cursor-pointer`}
+            >
+              <option value="monthly">Monthly</option>
+              <option value="bi-weekly">Bi-weekly</option>
+              <option value="weekly">Weekly</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 mt-8 pt-6 border-t border-gray-100">
+          <button
+            onClick={onClose}
+            className="px-6 py-3 rounded-xl font-bold text-sm text-gray-500 hover:bg-gray-100"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={saving}
+            className="flex items-center gap-2 bg-[#1D4EFF] text-white font-bold px-8 py-3 rounded-xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 disabled:opacity-50"
+          >
+            {saving ? (
+              <Loader2 className="animate-spin" size={18} />
+            ) : (
+              "Submit Application"
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function Financing() {
+  const [stats, setStats] = useState(null);
+  const [financings, setFinancings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [showModal, setShowModal] = useState(false);
+  const [actionLoading, setActionLoading] = useState(null);
+  const [notice, setNotice] = useState("");
+
+  const fetchAll = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      const [statsRes, listRes] = await Promise.all([
+        getFinancingStats(),
+        getCompanyFinancing(),
+      ]);
+      if (statsRes.success) setStats(statsRes.data);
+      if (listRes.success) setFinancings(listRes.data);
+    } catch (err) {
+      console.error("Failed to load financing data:", err);
+      setError(err.response?.data?.message || "Failed to load financing data.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const res = await getCurrentPayroll();
-        setPayrollData(res.data);
-      } catch (error) {
-        console.error("Failed to fetch data for Financing:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
+    fetchAll();
   }, []);
+
+  const handleDisburse = async (id) => {
+    setActionLoading(id);
+    try {
+      await disburseFinancing(id);
+      await fetchAll();
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to disburse financing.");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRepay = async (financing) => {
+    const amountStr = window.prompt(
+      `Outstanding balance: ₦${financing.outstandingBalance.toLocaleString()}\nEnter repayment amount:`,
+    );
+    if (!amountStr) return;
+    const amount = Number(amountStr);
+    if (!amount || amount <= 0) return;
+
+    setActionLoading(financing._id);
+    try {
+      await makeRepayment(financing._id, { amount });
+      await fetchAll();
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to process repayment.");
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   if (loading) {
     return (
       <div className="p-10 flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-gray-500 font-bold animate-pulse uppercase tracking-widest text-xs">Accessing Credit Markets...</p>
+        <p className="text-gray-500 font-bold animate-pulse uppercase tracking-widest text-xs">
+          Accessing Credit Markets...
+        </p>
       </div>
     );
   }
 
-  const totalGross = payrollData?.summary?.totalGross || 0;
-
   return (
     <div className="p-8 lg:p-12 space-y-10 max-w-[1600px] mx-auto animate-fadeIn">
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
-          <h1 className="text-4xl font-black text-gray-900 tracking-tight mb-2">Financing & Credit</h1>
-          <p className="text-gray-500 font-medium">Access talent credit, manage facilities, and scale operations.</p>
+          <h1 className="text-4xl font-black text-gray-900 tracking-tight mb-2">
+            Financing & Credit
+          </h1>
+          <p className="text-gray-500 font-medium">
+            Access talent credit, manage facilities, and scale operations.
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 bg-blue-600 text-white px-6 py-4 rounded-2xl font-bold text-sm hover:bg-blue-700 transition-all active:scale-95 shadow-lg shadow-blue-600/20">
-            <Plus size={20} />
-            New Loan Application
+        <button
+          onClick={() => setShowModal(true)}
+          className="flex items-center gap-2 bg-blue-600 text-white px-6 py-4 rounded-2xl font-bold text-sm hover:bg-blue-700 transition-all active:scale-95 shadow-lg shadow-blue-600/20"
+        >
+          <Plus size={20} />
+          New Loan Application
+        </button>
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2 bg-red-50 text-red-700 rounded-xl px-4 py-3 text-sm font-bold">
+          <AlertCircle size={16} /> {error}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+        <StatCard
+          label="Total Applications"
+          value={stats?.totalApplications ?? 0}
+          icon={Wallet}
+          bg="bg-blue-100"
+          iconColor="text-blue-600"
+        />
+        <StatCard
+          label="Active Loans"
+          value={stats?.activeLoans ?? 0}
+          icon={Landmark}
+          bg="bg-orange-100"
+          iconColor="text-orange-600"
+        />
+        <StatCard
+          label="Total Borrowed"
+          value={`₦${(stats?.totalBorrowed || 0).toLocaleString()}`}
+          icon={ShieldCheck}
+          bg="bg-green-100"
+          iconColor="text-green-600"
+        />
+        <StatCard
+          label="Outstanding Balance"
+          value={`₦${(stats?.outstandingBalance || 0).toLocaleString()}`}
+          icon={Clock}
+          bg="bg-purple-100"
+          iconColor="text-purple-600"
+        />
+      </div>
+
+      <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
+        <h3 className="text-xl font-black text-gray-900 mb-8">Applications</h3>
+        <div className="space-y-3">
+          <AnimatePresence mode="popLayout">
+            {financings.length === 0 ? (
+              <p className="text-gray-400 text-sm text-center py-10">
+                No financing applications yet.
+              </p>
+            ) : (
+              financings.map((f) => (
+                <motion.div
+                  key={f._id}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="flex items-center justify-between p-5 rounded-2xl border border-gray-50 hover:bg-gray-50 transition-all"
+                >
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <h4 className="text-sm font-black text-gray-900">
+                        ₦{f.requestedAmount.toLocaleString()}
+                      </h4>
+                      <span
+                        className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${STATUS_STYLES[f.status] || "bg-gray-50 text-gray-500"}`}
+                      >
+                        {f.status.replace("_", " ")}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-400 font-medium mt-1">
+                      {f.purpose} · {f.repaymentTermDays}-day term · Credit
+                      score {f.creditScore ?? "N/A"}
+                      {f.status === "active" &&
+                        ` · Outstanding: ₦${f.outstandingBalance.toLocaleString()}`}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {f.status === "approved" && (
+                      <button
+                        onClick={() => handleDisburse(f._id)}
+                        disabled={actionLoading === f._id}
+                        className="flex items-center gap-2 bg-green-600 text-white font-bold text-xs px-4 py-2.5 rounded-xl hover:bg-green-700 disabled:opacity-50"
+                      >
+                        {actionLoading === f._id ? (
+                          <Loader2 className="animate-spin" size={14} />
+                        ) : (
+                          "Disburse"
+                        )}
+                      </button>
+                    )}
+                    {f.status === "active" && (
+                      <button
+                        onClick={() => handleRepay(f)}
+                        disabled={actionLoading === f._id}
+                        className="flex items-center gap-2 bg-blue-600 text-white font-bold text-xs px-4 py-2.5 rounded-xl hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {actionLoading === f._id ? (
+                          <Loader2 className="animate-spin" size={14} />
+                        ) : (
+                          "Make Repayment"
+                        )}
+                      </button>
+                    )}
+                    <ChevronRight size={18} className="text-gray-300" />
+                  </div>
+                </motion.div>
+              ))
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+
+      {showModal && (
+        <ApplyModal
+          onClose={() => setShowModal(false)}
+          onApplied={(message) => {
+            setShowModal(false);
+            setNotice(message);
+            fetchAll();
+          }}
+        />
+      )}
+
+      {notice && (
+        <div className="fixed bottom-8 right-8 bg-[#0a1628] text-white px-6 py-4 rounded-2xl shadow-2xl max-w-sm z-50">
+          <p className="text-sm font-bold">{notice}</p>
+          <button
+            onClick={() => setNotice("")}
+            className="text-xs text-gray-400 mt-2 hover:text-white"
+          >
+            Dismiss
           </button>
         </div>
-      </div>
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-        <StatCard label="Available Credit" value="₦5.0M" change="Based on Revenue" icon={Wallet} color="bg-blue-500" trend="up" />
-        <StatCard label="Active Loans" value="₦1.2M" change="-₦200k Paid" icon={Landmark} color="bg-orange-500" trend="up" />
-        <StatCard label="Repayment Score" value="94/100" change="Excellent" icon={ShieldCheck} color="bg-green-500" trend="up" />
-        <StatCard label="Next Payout" value="Apr 01" change="₦150,000" icon={Clock} color="bg-purple-500" trend="up" />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Financing Overview */}
-        <div className="lg:col-span-2 bg-[#0a1628] rounded-[2.5rem] p-10 shadow-xl shadow-blue-900/10 relative overflow-hidden group">
-          <div className="relative z-10">
-            <div className="flex items-center justify-between mb-12">
-              <div>
-                <h3 className="text-2xl font-black text-white">Utilization Insights</h3>
-                <p className="text-blue-400 text-xs font-bold uppercase tracking-[0.2em] mt-2">Credit limit vs Repayment capacity</p>
-              </div>
-              <div className="flex items-center gap-2 bg-white/5 p-1.5 rounded-2xl border border-white/5">
-                <button className="px-4 py-2 rounded-xl text-[10px] font-black bg-blue-600 text-white uppercase tracking-widest transition-all">Utilization</button>
-                <button className="px-4 py-2 rounded-xl text-[10px] font-black text-gray-400 hover:text-white uppercase tracking-widest transition-all">Capacity</button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
-              <div className="relative flex justify-center py-4">
-                <svg viewBox="0 0 32 32" className="w-64 h-64 transform -rotate-90 drop-shadow-[0_0_20px_rgba(34,197,94,0.2)]">
-                  <circle r="16" cx="16" cy="16" fill="transparent" stroke="#22C55E" strokeWidth="32" strokeDasharray="70 100" />
-                  <circle r="16" cx="16" cy="16" fill="transparent" stroke="#F59E0B" strokeWidth="32" strokeDasharray="30 100" strokeDashoffset="-70" />
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <div className="bg-[#0a1628] w-28 h-28 rounded-full flex flex-col items-center justify-center shadow-inner ring-4 ring-white/5">
-                    <span className="text-white text-3xl font-black tracking-tight">70%</span>
-                    <span className="text-green-400 text-[9px] font-black uppercase tracking-widest mt-1">Repaid</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-8">
-                <div className="p-6 rounded-3xl bg-white/5 border border-white/5">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Payroll Capacity</span>
-                    <span className="text-lg font-black text-white">₦{(totalGross * 3 / 1000).toFixed(1)}k / mo</span>
-                  </div>
-                  <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden">
-                    <motion.div initial={{ width: 0 }} animate={{ width: "65%" }} transition={{ duration: 1.5 }} className="bg-blue-600 h-full" />
-                  </div>
-                  <p className="text-[10px] text-gray-500 mt-3 font-bold uppercase tracking-wider italic">Estimated 3x monthly payroll</p>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="p-6 rounded-[2rem] bg-green-500/5 border border-green-500/10">
-                    <p className="text-[10px] font-black text-green-500 uppercase tracking-widest mb-2">Total Repaid</p>
-                    <p className="text-2xl font-black text-white">₦2.8M</p>
-                  </div>
-                  <div className="p-6 rounded-[2rem] bg-orange-500/5 border border-orange-500/10">
-                    <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest mb-2">Outstanding</p>
-                    <p className="text-2xl font-black text-white">₦1.2M</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-green-600/5 blur-3xl rounded-full"></div>
-        </div>
-
-        {/* Schedule Card */}
-        <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm flex flex-col h-full">
-          <div className="flex items-center justify-between mb-10">
-            <h3 className="text-xl font-black text-gray-900">Payment Schedule</h3>
-            <button className="text-blue-600 font-bold text-sm hover:underline">View Calendar</button>
-          </div>
-          <div className="space-y-6 flex-1">
-            {[
-              { date: "Apr 01", amount: "₦150,000", status: "Upcoming", color: "bg-blue-50 text-blue-600" },
-              { date: "May 01", amount: "₦150,000", status: "Pending", color: "bg-gray-50 text-gray-400" },
-              { date: "Jun 01", amount: "₦150,000", status: "Pending", color: "bg-gray-50 text-gray-400" },
-              { date: "Mar 01", amount: "₦150,000", status: "Successful", color: "bg-green-50 text-green-600" },
-            ].map((item, i) => (
-              <div key={i} className="flex items-center justify-between group cursor-pointer p-2 rounded-2xl hover:bg-gray-50 transition-all">
-                <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-2xl flex flex-col items-center justify-center font-black text-[10px] uppercase leading-none ${item.color}`}>
-                    <span>{item.date.split(" ")[0]}</span>
-                    <span className="mt-1">{item.date.split(" ")[1]}</span>
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-black text-gray-900 leading-none mb-1">{item.amount}</h4>
-                    <p className={`text-[10px] font-bold uppercase tracking-widest ${item.status === 'Successful' ? 'text-green-500' : 'text-gray-400'}`}>{item.status}</p>
-                  </div>
-                </div>
-                <ChevronRight size={18} className="text-gray-300 group-hover:text-blue-600 transition-colors" />
-              </div>
-            ))}
-          </div>
-          <div className="mt-8 pt-8 border-t border-gray-50">
-            <div className="bg-blue-50 rounded-3xl p-6 border border-blue-100/50">
-              <div className="flex items-center gap-3 mb-2">
-                <ShieldCheck className="text-blue-600" size={20} />
-                <h4 className="text-sm font-black text-blue-900">Credit Boost</h4>
-              </div>
-              <p className="text-xs text-blue-800 font-medium leading-relaxed">
-                Your repayment score increased by 4 points. You are now eligible for a higher credit limit.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
-};
-
-export default Financing;
+}

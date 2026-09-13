@@ -2,13 +2,13 @@ import API from "./api";
 
 // GET COMPANY DETAILS
 export const getCompanyDetails = async () => {
-  const res = await API.get("/company");
+  const res = await API.get("/companies/profile");
   return res.data;
 };
 
 // UPDATE COMPANY DETAILS
 export const updateCompanyDetails = async (data) => {
-  const res = await API.put("/company", data);
+  const res = await API.put("/companies", data);
   return res.data;
 };
 
@@ -24,6 +24,19 @@ export const addEmployee = async (data) => {
   return res.data;
 };
 
+// get single employee
+
+export const getEmployeeById = async (id) => {
+  const res = await API.get(`/employees/${id}`);
+  return res.data;
+};
+
+// update employee
+
+export const updateEmployee = async (id, data) => {
+  const res = await API.put(`/employees/${id}`, data);
+  return res.data;
+};
 // GET DEPARTMENTS
 export const getDepartments = async () => {
   const res = await API.get("/departments");
@@ -32,6 +45,11 @@ export const getDepartments = async () => {
 
 // GET COMPANY STATS
 export const getCompanyStats = async () => {
-  const res = await API.get("/company/stats");
+  const res = await API.get("/companies/stats");
+  return res.data;
+};
+
+export const getNigerianBanks = async () => {
+  const res = await API.get("/employees/banks");
   return res.data;
 };
