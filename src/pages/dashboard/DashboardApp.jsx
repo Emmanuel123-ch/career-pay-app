@@ -2,14 +2,16 @@ import React, { useState, useEffect } from "react";
 
 import NewSidebar from "../../components/dashboard/NewSidebar";
 import NewHeader from "../../components/dashboard/NewHeader";
-import NewDashboard from "./NewDashboard";
+
 import CompanyDashboard from "./CompanyDashboard";
 import NewViewEmployees from "./NewViewEmployees";
 import AddEmployee from "./AddEmployee";
 import EditEmployee from "./EditEmployee.jsx";
 import Payroll from "./Payroll.jsx";
 import PaymentGateway from "./PaymentGateway.jsx";
-import TaxSimulator from "./TaxSimulator";
+import AuditLog from "./AuditLog.jsx";
+import Payslip from "./payslips.jsx";
+import Notification from "./Notification.jsx";
 import CompanySettings from "./CompanySettings";
 import PayrollApproval from "./payrollApproval.jsx";
 import ESOP from "./ESOP";
@@ -60,9 +62,7 @@ export default function DashboardApp() {
     const isEmployee = user?.role === "employee";
 
     switch (activePage) {
-      // ==========================================
       // DASHBOARD
-      // ==========================================
 
       case "dashboard":
         return isEmployee ? (
@@ -71,9 +71,7 @@ export default function DashboardApp() {
           <CompanyDashboard user={user} setActivePage={setActivePage} />
         );
 
-      // ==========================================
       // EMPLOYEES
-      // ==========================================
 
       case "view-employees":
         return isEmployee ? (
@@ -109,9 +107,7 @@ export default function DashboardApp() {
           />
         );
 
-      // ==========================================
       // PAYROLL
-      // ==========================================
 
       case "payroll":
         return isEmployee ? (
@@ -136,9 +132,7 @@ export default function DashboardApp() {
           />
         );
 
-      // ==========================================
       // PAYROLL APPROVAL
-      // ==========================================
 
       case "payroll-approval":
         return isEmployee ? (
@@ -156,44 +150,27 @@ export default function DashboardApp() {
           />
         );
 
-      // ==========================================
       // ESOP
-      // ==========================================
 
       case "esop":
         return <ESOP user={user} />;
 
-      // ==========================================
       // FINANCING
-      // ==========================================
 
       case "financing":
         return <Financing user={user} />;
 
-      // ==========================================
-      // PAYSLIP
-      // ==========================================
-
-      case "payslip":
-        return <ComingSoon title="Payslip" />;
-
-      // ==========================================
       // NOTIFICATION
-      // ==========================================
 
       case "notification":
-        return <ComingSoon title="Notifications" />;
+        return <Notification setActivePage={setActivePage} />;
 
-      // ==========================================
       // SETTINGS
-      // ==========================================
 
       case "settings":
         return <CompanySettings user={user} />;
 
-      // ==========================================
       // PAYMENT GATEWAY
-      // ==========================================
 
       case "payment-gateway":
         return isEmployee ? (
@@ -206,9 +183,16 @@ export default function DashboardApp() {
           />
         );
 
-      // ==========================================
+      // AUDIT LOG
+
+      case "audit-log":
+        return isEmployee ? <ComingSoon title="Audit Log" /> : <AuditLog />;
+
+      //PAY SLIP
+      case "payslip":
+        return isEmployee ? <ComingSoon title="My Payslips" /> : <Payslip />;
+
       // DEFAULT
-      // ==========================================
 
       default:
         return isEmployee ? (
@@ -219,9 +203,7 @@ export default function DashboardApp() {
     }
   };
 
-  // ==========================================
   // LOGOUT
-  // ==========================================
 
   const handleLogout = () => {
     localStorage.removeItem("token");

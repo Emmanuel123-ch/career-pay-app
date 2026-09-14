@@ -13,6 +13,7 @@ import {
   ChevronRight,
   ShieldCheck,
   Briefcase,
+  History,
 } from "lucide-react";
 
 const navItems = [
@@ -39,6 +40,7 @@ const navItems = [
   { icon: Wallet, label: "Financing", id: "financing" },
   { icon: Bell, label: "Notification", id: "notification" },
   { icon: ShieldCheck, label: "Payment Gateway", id: "payment-gateway" },
+  { icon: History, label: "Audit log", id: "audit-log" },
   { icon: Settings, label: "Settings", id: "settings" },
 ];
 

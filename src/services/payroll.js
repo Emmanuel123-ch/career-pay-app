@@ -57,6 +57,12 @@ export const getAuditLogsByModule = async (module, params = {}) => {
   return res.data;
 };
 
+// Get a specific employee's payslip for a given payroll run
+export const getEmployeePayslip = async (payrollId, employeeId) => {
+  const res = await API.get(`/payroll/${payrollId}/payslip/${employeeId}`);
+  return res.data;
+};
+
 // Tax breakdown
 export const getTaxBreakdown = async (annualGross) => {
   const res = await API.post("/payroll/tax-breakdown", {
