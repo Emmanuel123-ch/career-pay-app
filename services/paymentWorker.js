@@ -8,13 +8,12 @@ import Payroll from "../models/payrollModel.js";
 
 import Audit from "../models/auditModel.js";
 
+import Notification from "../models/notificationModel.js";
+
 import gateways, { GATEWAY_PRIORITY } from "./gateways/index.js";
 
-///**
-// * ============================================================
 // * DISBURSE SINGLE PAYMENT
-// * ============================================================
-//
+
 async function disburseSinglePayment(transaction, preferredGateway) {
   let lastError;
 
@@ -65,28 +64,8 @@ async function disburseSinglePayment(transaction, preferredGateway) {
   throw lastError || new Error("All configured payment gateways failed");
 }
 
-/**
- * ============================================================
- * CHECK AND FINALIZE PAYROLL
- * ============================================================
- *
- * Payroll statuses:
- *
- * draft
- * calculated
- * approved
- * processing
- * completed
- * failed
- *
- * We intentionally DO NOT use "partially_completed".
- *
- * If some employees are paid and others fail:
- *
- * payroll.status = "processing"
- *
- * This allows the administrator to retry the failed payments.
- */
+// CHECK AND FINALIZE PAYROLL
+
 export async function checkAndFinalizePayroll(payrollId) {
   const payroll = await Payroll.findById(payrollId);
 
@@ -100,10 +79,6 @@ export async function checkAndFinalizePayroll(payrollId) {
     company: payroll.company,
   });
 
-  /**
-   * No transactions means the payroll payment process failed
-   * before payment transactions were created.
-   */
   if (!transactions.length) {
     payroll.status = "failed";
 
@@ -126,22 +101,10 @@ export async function checkAndFinalizePayroll(payrollId) {
     return;
   }
 
-  /**
-   * Check whether every transaction has reached a final state.
-   *
-   * Final states:
-   * success
-   * failed
-   * cancelled
-   */
   const allSettled = transactions.every((transaction) =>
     ["success", "failed", "cancelled"].includes(transaction.status),
   );
 
-  /**
-   * If at least one transaction is still pending or processing,
-   * the payroll remains processing.
-   */
   if (!allSettled) {
     payroll.status = "processing";
 
@@ -159,11 +122,7 @@ export async function checkAndFinalizePayroll(payrollId) {
       transaction.status === "failed" || transaction.status === "cancelled",
   );
 
-  /**
-   * ============================================================
-   * SYNC PAYMENT TRANSACTIONS WITH PAYROLL ITEMS
-   * ============================================================
-   */
+  // SYNC PAYMENT TRANSACTIONS WITH PAYROLL ITEMS
   for (const transaction of transactions) {
     const payrollItem = payroll.payrollItems.find(
       (item) => item.employee.toString() === transaction.employee.toString(),
@@ -186,11 +145,8 @@ export async function checkAndFinalizePayroll(payrollId) {
     }
   }
 
-  /**
-   * ============================================================
-   * DETERMINE FINAL PAYROLL STATUS
-   * ============================================================
-   */
+  s;
+  s;
 
   // Every payment succeeded
   if (successfulTransactions.length === transactions.length) {
@@ -209,11 +165,8 @@ export async function checkAndFinalizePayroll(payrollId) {
 
   await payroll.save();
 
-  /**
-   * ============================================================
-   * AUDIT
-   * ============================================================
-   */
+  // AUDIT
+
   await Audit.log({
     company: payroll.company,
     user: payroll.processedBy,
@@ -251,25 +204,25 @@ export async function checkAndFinalizePayroll(payrollId) {
   console.log(
     `Payroll ${payroll._id} finalized with status: ${payroll.status}`,
   );
+
+  // Notify the company that payroll finalized
+  await Notification.notify({
+    company: payroll.company,
+    user: payroll.processedBy,
+    title:
+      payroll.status === "completed"
+        ? "Payroll completed successfully"
+        : payroll.status === "failed"
+          ? "Payroll processing failed"
+          : "Payroll partially processed",
+    message: `${successfulTransactions.length} of ${transactions.length} payments succeeded for ${payroll.payrollPeriod.month}/${payroll.payrollPeriod.year} payroll.`,
+    type: "payroll",
+    link: "payroll",
+  });
 }
 
-/**
- * ============================================================
- * PAYMENT WORKER
- * ============================================================
- *
- * BullMQ processes each employee payment independently.
- *
- * One payroll:
- *
- * Employee 1 → Payment Job 1
- * Employee 2 → Payment Job 2
- * Employee 3 → Payment Job 3
- * ...
- *
- * This gives us bulk payroll processing while still tracking
- * every employee payment individually.
- */
+//  PAYMENT WORKER
+
 const worker = new Worker(
   "payroll-payments",
 
@@ -280,11 +233,8 @@ const worker = new Worker(
       `Starting payment job ${job.id} for transaction ${transactionId}`,
     );
 
-    /**
-     * ============================================================
-     * LOAD TRANSACTION
-     * ============================================================
-     */
+    // LOAD TRANSACTION
+
     const existingTransaction =
       await PaymentTransaction.findById(transactionId);
 
@@ -292,11 +242,7 @@ const worker = new Worker(
       throw new Error(`Transaction ${transactionId} not found`);
     }
 
-    /**
-     * ============================================================
-     * SAFETY CHECKS
-     * ============================================================
-     */
+    //  SAFETY CHECKS
 
     // Payment was cancelled before worker started
     if (existingTransaction.status === "cancelled") {
@@ -320,16 +266,8 @@ const worker = new Worker(
       };
     }
 
-    /**
-     * ============================================================
-     * ATOMIC pending → processing
-     * ============================================================
-     *
-     * This is extremely important.
-     *
-     * If two workers somehow receive the same transaction,
-     * only one can change pending → processing.
-     */
+    // ATOMIC pending → processing
+
     const transaction = await PaymentTransaction.findOneAndUpdate(
       {
         _id: transactionId,

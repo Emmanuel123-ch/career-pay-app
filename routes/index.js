@@ -10,14 +10,10 @@ import subscriptionRoutes from "./subscriptionRoutes.js";
 import requireSubscription from "../middlewares/requireSubscription.js";
 import payrollController from "../controllers/payrollController.js";
 import auditRoutes from "./auditRoutes.js";
+import notificationRoutes from "./notificationRoutes.js";
 import { protect } from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
-
-/**
- * API Routes
- * All routes are prefixed with /api
- */
 
 // Health check endpoint
 router.get("/health", (req, res) => {
@@ -35,12 +31,13 @@ router.use("/dashboard", dashboardRoutes);
 router.use("/companies", companyRoutes);
 router.use("/subscriptions", subscriptionRoutes);
 router.use("/audit-logs", auditRoutes);
-
+router.use("/notifications", notificationRoutes);
 /**
  * @route   POST /api/payroll/payment-webhook
  * @desc    Flutterwave webhook — called automatically after transfer completes
  * @access  Public — Flutterwave calls this, no auth token
  */
+
 router.post("/payroll/payment-webhook", payrollController.handlePaymentWebhook);
 
 // Public — Monnify calls this, no auth

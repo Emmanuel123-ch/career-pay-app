@@ -13,6 +13,7 @@ router.use(requireVerified);
  * @desc    Apply for payroll financing (BR-006)
  * @access  Private (Founder, Admin)
  */
+
 router.post("/apply", isFounderOrAdmin, financingController.applyForFinancing);
 
 /**
