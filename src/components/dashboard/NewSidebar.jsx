@@ -12,7 +12,6 @@ import {
   LogOut,
   ChevronRight,
   ShieldCheck,
-  Briefcase,
   History,
 } from "lucide-react";
 
@@ -33,6 +32,7 @@ const navItems = [
     id: "payroll",
     children: [
       { label: "Run Payroll", id: "payroll" },
+      { laabel: "Overtime", id: "overtime" },
       { label: "Payslips", id: "payslip" },
     ],
   },

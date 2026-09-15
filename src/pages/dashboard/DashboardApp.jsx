@@ -192,6 +192,9 @@ export default function DashboardApp() {
       case "payslip":
         return isEmployee ? <ComingSoon title="My Payslips" /> : <Payslip />;
 
+      case "overtime":
+        return isEmployee ? <ComingSoon title="Overtime" /> : <Overtime />;
+
       // DEFAULT
 
       default:

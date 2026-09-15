@@ -16,6 +16,7 @@ import {
 import { getCurrentPayroll } from "../../services/payroll";
 import { getCompanyStats } from "../../services/company";
 import { motion } from "framer-motion";
+import { exportToCSV } from "../../utils/exportCSV";
 
 const formatCurrency = (amount) => {
   const value = Number(amount || 0);
@@ -91,7 +92,7 @@ const CompanyDashboard = ({ user, setActivePage }) => {
       setPayrollData(payroll?.data || null);
       setStatsData(stats?.data || stats || null);
 
-      setDepartments([]);
+      setDepartments(stats?.data?.departments || stats?.departments || []);
     } catch (error) {
       console.error(
         "Failed to fetch dashboard data:",
@@ -110,6 +111,44 @@ const CompanyDashboard = ({ user, setActivePage }) => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const handleExportReport = () => {
+    const rows = [
+      {
+        Metric: "Total Employees",
+        Value: totalEmployees,
+      },
+      {
+        Metric: "Active Employees",
+        Value: activeEmployees,
+      },
+      {
+        Metric: "Total Payroll (Gross)",
+        Value: totalGross,
+      },
+      {
+        Metric: "Total Deductions",
+        Value: totalDeductions,
+      },
+      {
+        Metric: "Net Payroll",
+        Value: totalNet,
+      },
+      {
+        Metric: "Current Payroll Status",
+        Value: payrollStatus,
+      },
+      ...normalizedDepartments.map((dept) => ({
+        Metric: `Department: ${dept.name}`,
+        Value: dept.count,
+      })),
+    ];
+
+    exportToCSV(
+      `company-dashboard-report-${new Date().toISOString().slice(0, 10)}.csv`,
+      rows,
+    );
+  };
 
   if (loading) {
     return (
@@ -224,7 +263,10 @@ const CompanyDashboard = ({ user, setActivePage }) => {
             Refresh
           </button>
 
-          <button className="flex items-center gap-2 bg-white text-gray-700 px-6 py-4 rounded-2xl font-bold text-sm border border-gray-100 hover:bg-gray-50 transition-all active:scale-95 shadow-sm">
+          <button
+            onClick={handleExportReport}
+            className="flex items-center gap-2 bg-white text-gray-700 px-6 py-4 rounded-2xl font-bold text-sm border border-gray-100 hover:bg-gray-50 transition-all active:scale-95 shadow-sm"
+          >
             <Download size={18} />
             Export Report
           </button>

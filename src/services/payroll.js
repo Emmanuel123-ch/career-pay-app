@@ -45,6 +45,16 @@ export const resetPayroll = async (payrollId) => {
   return res.data;
 };
 
+export const correctPayrollItem = async (
+  payrollId,
+  employeeId,
+  corrections,
+) => {
+  const res = await API.patch(
+    `/payroll/${payrollId}/items/${employeeId}`,
+    corrections,
+  );
+};
 // Get all payment transactions for the company (with optional filters)
 export const getAllTransactions = async (params = {}) => {
   const res = await API.get("/payroll/transactions", { params });

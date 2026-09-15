@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { getCompanyEmployees } from "../../services/company";
 import { motion, AnimatePresence } from "framer-motion";
+import { exportToCSV } from "../../utils/exportCSV";
 
 const STATUS_STYLES = {
   Active: "bg-green-50 text-green-600 ring-1 ring-green-500/20",
@@ -63,6 +64,29 @@ export default function NewViewEmployees({ setActivePage, onEditEmployee }) {
     ...new Set(employees.map((e) => e.department || "N/A")),
   ];
 
+  const handleExportEmployees = () => {
+    const rows = filtered.map((emp) => ({
+      "First Name": emp.user?.firstName || "",
+      "Last Name": emp.user?.lastName || "",
+      Email: emp.user?.email || "",
+      "Employee ID": emp.employeeId || "",
+      Position: emp.position || "",
+      Department: emp.department || "",
+      "Join Date": emp.createdAt
+        ? new Date(emp.createdAt).toLocaleDateString()
+        : "",
+      Status: !emp.isActive
+        ? "Inactive"
+        : emp.status === "suspended"
+          ? "Suspended"
+          : emp.status === "on-leave"
+            ? "On Leave"
+            : "Active",
+    }));
+
+    exportToCSV("employee-directory.csv", rows);
+  };
+
   if (loading) {
     return (
       <div className="p-10 flex flex-col items-center justify-center min-h-[60vh] gap-4">
@@ -87,7 +111,10 @@ export default function NewViewEmployees({ setActivePage, onEditEmployee }) {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 bg-white text-gray-700 px-5 py-3 rounded-2xl font-bold text-sm border border-gray-100 hover:bg-gray-50 transition-all active:scale-95 shadow-sm">
+          <button
+            onClick={handleExportEmployees}
+            className="flex items-center gap-2 bg-white text-gray-700 px-5 py-3 rounded-2xl font-bold text-sm border border-gray-100 hover:bg-gray-50 transition-all active:scale-95 shadow-sm"
+          >
             <Download size={18} />
             Export List
           </button>

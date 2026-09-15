@@ -19,11 +19,14 @@ import {
   payrollApproval,
   processPayroll,
   resetPayroll,
+  correctPayrollItem,
 } from "../../services/payroll.js";
+
+import { exportToCSV } from "../../utils/exportCSV";
 
 import { motion } from "framer-motion";
 
-export default function Payroll({ onNext, onPaymentStarted }) {
+export default function Payroll({ onNext, onPaymentStarted, setActivePage }) {
   const [payroll, setPayroll] = useState(null);
   const [loading, setLoading] = useState(true);
   const [calculating, setCalculating] = useState(false);
@@ -32,10 +35,10 @@ export default function Payroll({ onNext, onPaymentStarted }) {
   const [resetting, setResetting] = useState(false);
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [overtimeInputs, setOvertimeInputs] = useState({});
+  const [savingOvertime, setSavingOvertime] = useState(null);
 
-  // ==========================================
   // FETCH CURRENT PAYROLL
-  // ==========================================
 
   const fetchPayroll = async () => {
     try {
@@ -45,6 +48,14 @@ export default function Payroll({ onNext, onPaymentStarted }) {
       const response = await getCurrentPayroll();
 
       setPayroll(response?.data || response || null);
+
+      const initialOvertime = {};
+      (response?.data?.payrollItems || response?.payrollItems || []).forEach(
+        (item) => {
+          initialOvertime[item.employee?._id] = item.additions?.overtime || 0;
+        },
+      );
+      setOvertimeInputs(initialOvertime);
     } catch (err) {
       console.error("Failed to fetch payroll:", err);
 
@@ -62,9 +73,7 @@ export default function Payroll({ onNext, onPaymentStarted }) {
     fetchPayroll();
   }, []);
 
-  // ==========================================
   // CALCULATE PAYROLL
-  // ==========================================
 
   const handleCalculate = async () => {
     if (!payroll?._id) return;
@@ -112,9 +121,7 @@ export default function Payroll({ onNext, onPaymentStarted }) {
     }
   };
 
-  // ==========================================
   // OPEN APPROVAL SCREEN
-  // ==========================================
 
   const handleOpenApproval = () => {
     if (!payroll?._id) return;
@@ -124,9 +131,7 @@ export default function Payroll({ onNext, onPaymentStarted }) {
     }
   };
 
-  // ==========================================
   // PROCESS PAYMENT
-  // ==========================================
 
   const handleProcessPayment = async () => {
     if (!payroll?._id) return;
@@ -150,6 +155,56 @@ export default function Payroll({ onNext, onPaymentStarted }) {
     } finally {
       setProcessing(false);
     }
+  };
+
+  // SAVE OVERTIME (before approval, unta
+
+  const handleSaveOvertime = async (employeeId) => {
+    if (!payroll?._id) return;
+
+    setSavingOvertime(employeeId);
+    setError("");
+
+    try {
+      const overtime = Number(overtimeInputs[employeeId]) || 0;
+
+      await correctPayrollItem(payroll._id, employeeId, { overtime });
+
+      await fetchPayroll();
+    } catch (err) {
+      console.error("Save overtime failed:", err);
+
+      setError(
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to save overtime.",
+      );
+    } finally {
+      setSavingOvertime(null);
+    }
+  };
+
+  const handleExportPayroll = () => {
+    const rows = filteredItems.map((item) => {
+      const employee = item.employee || {};
+      return {
+        "Employee Name":
+          `${employee.user?.firstName || ""} ${employee.user?.lastName || ""}`.trim(),
+        Email: employee.user?.email || "",
+        "Gross Salary": item.grossSalary || 0,
+        Tax: item.deductions?.tax || 0,
+        Pension: item.deductions?.pension || 0,
+        NHF: item.deductions?.nhf || 0,
+        Overtime: item.additions?.overtime || 0,
+        "Net Salary": item.netSalary || 0,
+        "Payment Status": item.paymentStatus || "pending",
+      };
+    });
+
+    exportToCSV(
+      `payroll-${payroll?.payrollPeriod?.month}-${payroll?.payrollPeriod?.year}.csv`,
+      rows,
+    );
   };
 
   // RESET PAYROLL
@@ -243,6 +298,7 @@ export default function Payroll({ onNext, onPaymentStarted }) {
   const isProcessing = status === "processing";
   const isCompleted = status === "completed";
   const isFailed = status === "failed";
+  const canEditOvertime = isDraft || isCalculated;
 
   // STATUS TEXT
 
@@ -260,9 +316,7 @@ export default function Payroll({ onNext, onPaymentStarted }) {
   return (
     <div className="min-h-screen bg-[#f5f6f8]">
       <div className="max-w-7xl mx-auto px-6 py-8">
-        {/* ==========================================
-            HEADER
-        ========================================== */}
+        {/* HEADER */}
         <div className="flex items-start justify-between mb-8">
           <div>
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
@@ -291,7 +345,10 @@ export default function Payroll({ onNext, onPaymentStarted }) {
               Refresh
             </button>
 
-            <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-bold text-gray-700">
+            <button
+              onClick={() => setActivePage?.("audit-log")}
+              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-bold text-gray-700"
+            >
               <History size={17} />
               Audit Logs
             </button>
@@ -305,9 +362,7 @@ export default function Payroll({ onNext, onPaymentStarted }) {
             <p className="font-medium text-sm">{error}</p>
           </div>
         )}
-        {/* ==========================================
-            ACTION BAR
-        ========================================== */}
+        {/* ACTION BAR */}
         <div className="bg-white border border-gray-200 rounded-2xl p-5 mb-6">
           <div className="flex items-center justify-between gap-4">
             <div>
@@ -441,9 +496,7 @@ export default function Payroll({ onNext, onPaymentStarted }) {
             </div>
           </div>
         </div>
-        {/* ==========================================
-            SUMMARY CARDS
-        ========================================== */}
+        {/* SUMMARY CARDS  */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-6">
           <div className="bg-white border border-gray-200 rounded-xl p-5">
             <p className="text-sm text-gray-500">Total Employees</p>
@@ -479,9 +532,7 @@ export default function Payroll({ onNext, onPaymentStarted }) {
             </p>
           </div>
         </div>
-        {/* ==========================================
-            PAYROLL TABLE
-        ========================================== */}
+        {/* PAYROLL TABLE*/}
         <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
           <div className="px-6 py-5 border-b border-gray-200 flex items-center justify-between">
             <div>
@@ -508,7 +559,10 @@ export default function Payroll({ onNext, onPaymentStarted }) {
                 />
               </div>
 
-              <button className="p-2.5 border border-gray-200 rounded-lg text-gray-600">
+              <button
+                onClick={handleExportPayroll}
+                className="p-2.5 border border-gray-200 rounded-lg text-gray-600"
+              >
                 <Download size={17} />
               </button>
             </div>
@@ -533,13 +587,19 @@ export default function Payroll({ onNext, onPaymentStarted }) {
                   <th className="text-right px-6 py-4 text-xs font-bold text-gray-500 uppercase">
                     Pension
                   </th>
-
                   <th className="text-right px-6 py-4 text-xs font-bold text-gray-500 uppercase">
-                    Net
+                    NHF
                   </th>
 
+                  <th className="text-right px-6 py-4 text-xs font-bold text-gray-500 uppercase">
+                    Overtime
+                  </th>
+
+                  <th className="text-right px-6 py-4 text-xs font-bold text-gray-500 uppercase">
+                    Net pay{" "}
+                  </th>
                   <th className="text-center px-6 py-4 text-xs font-bold text-gray-500 uppercase">
-                    Payment
+                    Status
                   </th>
                 </tr>
               </thead>
@@ -563,17 +623,13 @@ export default function Payroll({ onNext, onPaymentStarted }) {
                     return (
                       <motion.tr
                         key={item._id || employee._id || index}
-                        initial={{
-                          opacity: 0,
-                        }}
-                        animate={{
-                          opacity: 1,
-                        }}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
                       >
                         <td className="px-6 py-4">
                           <div>
                             <p className="font-bold text-gray-900">
-                              {employee.user?.firstName}
+                              {employee.user?.firstName}{" "}
                               {employee.user?.lastName}
                             </p>
 
@@ -598,6 +654,38 @@ export default function Payroll({ onNext, onPaymentStarted }) {
                           ).toLocaleString()}
                         </td>
 
+                        <td className="px-6 py-4 text-right text-gray-700">
+                          ₦{Number(item.deductions?.nhf || 0).toLocaleString()}
+                        </td>
+
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <input
+                              type="number"
+                              min="0"
+                              disabled={!canEditOvertime}
+                              value={overtimeInputs[employee._id] ?? 0}
+                              onChange={(e) =>
+                                setOvertimeInputs((prev) => ({
+                                  ...prev,
+                                  [employee._id]: e.target.value,
+                                }))
+                              }
+                              className="w-20 px-2 py-1.5 text-right text-sm font-semibold border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-100 disabled:bg-gray-50 disabled:opacity-60"
+                            />
+                            <button
+                              onClick={() => handleSaveOvertime(employee._id)}
+                              disabled={
+                                !canEditOvertime ||
+                                savingOvertime === employee._id
+                              }
+                              className="text-xs font-bold text-blue-600 hover:text-blue-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              {savingOvertime === employee._id ? "..." : "Save"}
+                            </button>
+                          </div>
+                        </td>
+
                         <td className="px-6 py-4 text-right font-black text-gray-900">
                           ₦{Number(item.netSalary || 0).toLocaleString()}
                         </td>
@@ -605,16 +693,16 @@ export default function Payroll({ onNext, onPaymentStarted }) {
                         <td className="px-6 py-4 text-center">
                           <span
                             className={`inline-flex px-3 py-1.5 rounded-full text-xs font-bold ${
-                              paymentStatus === "paid"
+                              item.paymentStatus === "paid"
                                 ? "bg-green-100 text-green-700"
-                                : paymentStatus === "processing"
+                                : item.paymentStatus === "processing"
                                   ? "bg-orange-100 text-orange-700"
-                                  : paymentStatus === "failed"
+                                  : item.paymentStatus === "failed"
                                     ? "bg-red-100 text-red-700"
                                     : "bg-gray-100 text-gray-600"
                             }`}
                           >
-                            {paymentStatus}
+                            {item.paymentStatus || "pending"}
                           </span>
                         </td>
                       </motion.tr>
@@ -625,9 +713,7 @@ export default function Payroll({ onNext, onPaymentStarted }) {
             </table>
           </div>
         </div>
-        {/* ==========================================
-            FOOTER
-        ========================================== */}
+        {/* FOOTER */}
         <div className="mt-6 flex items-center gap-2 text-xs text-gray-500">
           <FileSpreadsheet size={15} />
           Payroll ID:
