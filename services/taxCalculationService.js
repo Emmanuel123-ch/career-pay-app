@@ -224,6 +224,7 @@ class TaxCalculationService {
       basicSalary = null, // Optional: if salary is broken down
       allowances = [],
       bonuses = 0,
+      overtime = 0,
       otherDeductions = [],
       currency = "NGN",
       taxRelief = null, // Optional: custom tax relief
@@ -246,10 +247,11 @@ class TaxCalculationService {
         additions: {
           bonuses,
           allowances,
+          overtime,
           totalAdditions:
             bonuses + allowances.reduce((sum, a) => sum + a.amount, 0),
         },
-        netSalary: grossSalary + bonuses,
+        netSalary: grossSalary + bonuses + overtime,
         currency,
       };
     }
@@ -273,7 +275,7 @@ class TaxCalculationService {
 
     const totalDeductions =
       tax + pension.employeeContribution + nhf + otherDeductionsTotal;
-    const netSalary = adjustedGross - totalDeductions;
+    const netSalary = adjustedGross - totalDeductions + overtime;
 
     // Calculate employer contributions
     const employerStatutory = this.calculateEmployerStatutory(adjustedGross);
@@ -290,6 +292,7 @@ class TaxCalculationService {
       additions: {
         bonuses,
         allowances,
+        overtime,
         totalAdditions,
       },
       employerContributions: {

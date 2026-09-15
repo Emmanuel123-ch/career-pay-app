@@ -1043,10 +1043,7 @@ class PayrollService {
       );
 
       item.grossSalary =
-        item.baseSalary +
-        item.additions.bonus +
-        item.additions.overtime +
-        totalAllowances;
+        item.baseSalary + item.additions.bonus + totalAllowances;
 
       const recalculated = taxCalculationService.calculateEmployeePayroll({
         grossSalary: item.grossSalary,
@@ -1056,6 +1053,8 @@ class PayrollService {
         allowances: item.additions.allowances,
 
         bonuses: item.additions.bonus,
+
+        overtime: item.deductions.overtime,
 
         otherDeductions: item.deductions.otherDeductions,
       });
