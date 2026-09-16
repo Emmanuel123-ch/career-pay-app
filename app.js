@@ -1,5 +1,3 @@
-// src/app.js
-
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -10,14 +8,11 @@ import "dotenv/config";
 
 const app = express();
 
-// ===============================
 // Security middleware
-// ===============================
+
 app.use(helmet());
 
-// ===============================
 // CORS configuration
-// ===============================
 
 const allowedOrigins = [
   "http://localhost:5173",
@@ -46,9 +41,7 @@ app.use(
   }),
 );
 
-// ===============================
 // Body parser middleware
-// ===============================
 
 app.use(express.json({ limit: "10mb" }));
 
@@ -59,23 +52,17 @@ app.use(
   }),
 );
 
-// ===============================
 // Logging middleware
-// ===============================
 
 if (process.env.NODE_ENV === "development") {
   app.use(morgan("dev"));
 }
 
-// ===============================
 // API routes
-// ===============================
 
 app.use("/api", routes);
 
-// ===============================
 // Root endpoint
-// ===============================
 
 app.get("/", (req, res) => {
   res.json({
@@ -86,15 +73,31 @@ app.get("/", (req, res) => {
   });
 });
 
-// ===============================
+// Temporary endpoint to check Render's outbound public IP
+app.get("/api/debug/outbound-ip", async (req, res) => {
+  try {
+    const response = await fetch("https://api.ipify.org?format=json");
+    const data = await response.json();
+
+    res.json({
+      success: true,
+      outboundIP: data.ip,
+    });
+  } catch (error) {
+    console.error("Outbound IP check failed:", error);
+
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
+
 // 404 handler
-// ===============================
 
 app.use(notFound);
 
-// ===============================
 // Global error handler
-// ===============================
 
 app.use(errorHandler);
 
