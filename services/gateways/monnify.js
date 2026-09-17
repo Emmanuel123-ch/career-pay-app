@@ -124,6 +124,11 @@ export async function verifyTransfer(gatewayTransferId) {
     },
   );
 
+  console.log(
+    "MONNIFY FULL VERIFICATION RESPONSE:",
+    JSON.stringify(response.data, null, 2),
+  );
+
   // Normalize Monnify status to match Flutterwave format
   const monnifyStatus = response.data.responseBody?.status;
 
