@@ -30,6 +30,11 @@ const STATUS_CONFIG = {
     color: "bg-gray-100 text-gray-500",
     icon: Clock,
   },
+  cancelled: {
+    label: "Cancelled",
+    color: "bg-gray-200 text-gray-600",
+    icon: XCircle,
+  },
 };
 
 const FILTERS = [
@@ -38,6 +43,7 @@ const FILTERS = [
   { value: "failed", label: "Failed" },
   { value: "processing", label: "Processing" },
   { value: "pending", label: "Pending" },
+  { value: "cancelled", label: "Cancelled" },
 ];
 
 export default function AuditLog() {
@@ -157,6 +163,16 @@ export default function AuditLog() {
           <p className="text-2xl font-black text-gray-900 mt-1">
             {summary.pending}
           </p>
+        </div>
+        +{" "}
+        <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
+          +{" "}
+          <p className="text-xs text-gray-500 font-bold uppercase">Cancelled</p>
+          +{" "}
+          <p className="text-2xl font-black text-gray-900 mt-1">
+            {summary.cancelled}
+          </p>
+          +{" "}
         </div>
       </div>
 
